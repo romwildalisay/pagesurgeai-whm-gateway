@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: pagesurgeai-whm-gateway
+    runtime: node
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: WHM_BASE_URL
+        sync: false
+      - key: WHM_USERNAME
+        sync: false
+      - key: WHM_API_TOKEN
+        sync: false
+      - key: GATEWAY_API_KEY
+        sync: false
+      - key: WHM_TIMEOUT_MS
+        value: 15000
