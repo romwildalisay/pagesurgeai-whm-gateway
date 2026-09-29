@@ -1,113 +1,95 @@
-# Beginner deployment without Docker
+# Beginner deployment: PageSurgeAI WHM Gateway v0.2
 
-This method uses GitHub for storing the non-secret source code and Render for running it. You do not install Docker, Node.js, PuTTY, or terminal tools on your computer.
+This update keeps Render and adds standards-based OAuth. You will use Auth0 for sign-in and access tokens rather than maintaining an authentication server yourself.
 
-## Before you start
+## Part 1: Update the GitHub repository
 
-You need:
+1. Download and unzip `pagesurgeai-whm-gateway-v0.2.zip`.
+2. Open your existing private GitHub repository.
+3. Upload the v0.2 files over the existing files.
+4. Do not upload `.env`, WHM tokens, passwords, or exported Auth0 secrets.
+5. Commit the update to the branch Render deploys.
 
-- A GitHub account.
-- A Render account connected to GitHub.
-- The Namecheap WHM server hostname.
-- Your reseller username.
-- A restricted WHM API token.
-- A new random gateway key of at least 32 characters.
+## Part 2: Create the protected API in Auth0
 
-Never upload `.env`, disclose either token in chat, or reuse the WHM token as the gateway key.
+1. Sign in to Auth0 and create or select a tenant.
+2. Open **Applications → APIs → Create API**.
+3. Name it **PageSurgeAI WHM Gateway**.
+4. Use this identifier:
 
-## Part 1: Upload the project to GitHub
+   `https://pagesurgeai-whm-gateway.onrender.com/mcp`
 
-1. Download and unzip `pagesurgeai-whm-gateway-v0.1.zip` on your computer.
-2. Sign in to GitHub.
-3. Select **New repository**.
-4. Name it `pagesurgeai-whm-gateway`.
-5. Select **Private**.
-6. Create the repository without adding a README or template.
-7. Select **Add file → Upload files**.
-8. Upload the contents inside the unzipped project folder. The uploaded root must contain `package.json`, `package-lock.json`, `render.yaml`, `src`, and `README.md`.
-9. Do not upload a `.env` file. The included `.gitignore` prevents this if one is created later.
-10. Select **Commit changes**.
+5. Use **RS256** signing.
+6. Add the permission `whm:read`.
+7. Enable the Auth0 options required for MCP/OAuth clients, including PKCE and Client ID Metadata Documents or dynamic client registration, using Auth0's current MCP authorization guidance.
+8. Allow only your intended PageSurgeAI user or organization to authorize this API.
 
-## Part 2: Create the managed service
+Record the Auth0 issuer domain, for example:
 
-1. Sign in to Render using GitHub.
-2. Select **New → Web Service**.
-3. Select the private `pagesurgeai-whm-gateway` repository.
-4. Use these values:
+`https://YOUR-TENANT.REGION.auth0.com`
 
-   - Language: **Node**
-   - Branch: **main**
-   - Build command: `npm ci && npm run build`
-   - Start command: `npm start`
-   - Health check path: `/health`
+Do not include a trailing slash in Render's `OAUTH_ISSUER` value.
 
-5. Select a region reasonably close to the Namecheap server.
-6. A free service can sleep after inactivity and may be too slow for dependable ChatGPT tool discovery. Use it only for an initial experiment; use an always-on plan for reliable operation.
+## Part 3: Update Render environment variables
 
-## Part 3: Add the four private settings
-
-In the service's **Environment** section, add:
-
-| Key | What to enter |
-| --- | --- |
-| `WHM_BASE_URL` | `https://YOUR-WHM-SERVER-HOSTNAME:2087` |
-| `WHM_USERNAME` | Your reseller username |
-| `WHM_API_TOKEN` | Your restricted WHM API token |
-| `GATEWAY_API_KEY` | A new random secret of at least 32 characters |
-
-Optional:
+Open the Render service, then **Environment**. Preserve the existing WHM values and set:
 
 | Key | Value |
 | --- | --- |
-| `WHM_TIMEOUT_MS` | `15000` |
-| `NODE_VERSION` | `22` |
+| `PUBLIC_BASE_URL` | `https://pagesurgeai-whm-gateway.onrender.com` |
+| `OAUTH_ISSUER` | Your Auth0 issuer without a trailing slash |
+| `OAUTH_AUDIENCE` | `https://pagesurgeai-whm-gateway.onrender.com/mcp` |
+| `OAUTH_SCOPE` | `whm:read` |
 
-Do not manually add `PORT`; Render supplies it automatically.
+Remove the obsolete `GATEWAY_API_KEY` after v0.2 is successfully deployed. It is no longer read by the application.
 
 Select **Save, rebuild, and deploy**.
 
-## Part 4: Check the deployment
+## Part 4: Verify the deployment
 
-Wait until the dashboard says the deploy is live. Open:
+Open:
 
-```text
-https://YOUR-RENDER-NAME.onrender.com/health
-```
+`https://pagesurgeai-whm-gateway.onrender.com/health`
 
-Expected result:
+Expected fields:
 
-```json
-{"status":"ok","name":"pagesurgeai-whm-gateway","version":"0.1.0","mode":"read-only"}
-```
+`{"status":"ok","name":"pagesurgeai-whm-gateway","version":"0.2.0","mode":"read-only","auth":"oauth2"}`
 
-The MCP endpoint is then:
+Then open:
 
-```text
-https://YOUR-RENDER-NAME.onrender.com/mcp
-```
+`https://pagesurgeai-whm-gateway.onrender.com/.well-known/oauth-protected-resource`
 
-Opening `/mcp` directly in a browser can return a method error. That is normal because an MCP client sends an authenticated POST request.
+Confirm that:
 
-## Part 5: Hand off for ChatGPT connection
+- `resource` is the public `/mcp` URL;
+- `authorization_servers` contains your Auth0 issuer;
+- `scopes_supported` contains `whm:read`.
 
-Provide only the public `/mcp` URL. Keep both secret values private. The ChatGPT connection uses `GATEWAY_API_KEY`; it never uses `WHM_API_TOKEN`.
+## Part 5: Reconnect ChatGPT
 
-Before using the connector, confirm that its tool scan displays exactly:
+1. In ChatGPT, enable **Settings → Security and login → Developer mode**.
+2. Open **Plugins → Drafts**.
+3. Remove the old PageSurgeAI WHM Gateway v0.1 draft connection.
+4. Select **+** and enter:
 
-- `hosting_list_accounts`
-- `hosting_get_account`
-- `hosting_list_packages`
-- `hosting_get_usage`
+   `https://pagesurgeai-whm-gateway.onrender.com/mcp`
 
-Stop if any write, shell, account-creation, suspension, or deletion tool appears.
+5. Choose OAuth when prompted.
+6. Complete the Auth0 sign-in and consent screen.
+7. Open the new draft and select **Refresh**.
+8. Confirm exactly four tools are present.
+9. In a new chat, enable Developer mode and select the gateway.
+10. Test: **List the available WHM hosting packages. Do not make any changes.**
 
-## Common problems
+## Troubleshooting
 
 | Symptom | Likely cause | Correction |
 | --- | --- | --- |
-| Build fails | Project files were uploaded inside an extra folder | Put `package.json` at the repository root |
-| Health page fails | One or more required settings is missing | Check all four environment variables |
-| WHM request fails | Wrong server hostname, token, username, or port blocked | Verify WHM access and port `2087` with Namecheap |
-| ChatGPT gets unauthorized | Wrong gateway key | Use `GATEWAY_API_KEY`, not the WHM token |
-| First request times out | Free service was sleeping | Retry once for testing or use an always-on plan |
-| Certificate error | Incorrect WHM server hostname | Use the hostname covered by the WHM server certificate |
+| No Connect prompt | Protected-resource metadata or tool security metadata is unavailable | Check the well-known URL and refresh the ChatGPT draft |
+| `invalid_token` | Issuer, signature, audience, or expiry does not match | Compare Auth0 API identifier with `OAUTH_AUDIENCE` |
+| `insufficient_scope` | The token lacks `whm:read` | Grant the API permission and reconnect |
+| Tool discovery works but calls fail | OAuth linking is incomplete | Disconnect, reconnect, and approve `whm:read` |
+| First request times out | Free Render service was sleeping | Retry after the health page responds or use an always-on plan |
+| WHM call fails | WHM hostname, username, token, permissions, or port is incorrect | Verify the restricted WHM credentials in Render |
+
+Never make the MCP tools anonymous. Although they are read-only, they expose private hosting account information.

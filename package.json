@@ -1,6 +1,6 @@
 {
   "name": "pagesurgeai-whm-gateway",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Read-only MCP gateway for a cPanel/WHM reseller account.",
@@ -12,9 +12,10 @@
   },
   "engines": { "node": ">=20" },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.30.1",
+    "@modelcontextprotocol/sdk": "1.31.0",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
+    "jose": "^6.1.0",
     "zod": "4.6.5"
   },
   "devDependencies": {

@@ -9,7 +9,10 @@ const config: Config = {
   WHM_BASE_URL: "https://whm.example.test:2087",
   WHM_USERNAME: "reseller",
   WHM_API_TOKEN: "a".repeat(32),
-  GATEWAY_API_KEY: "b".repeat(32),
+  PUBLIC_BASE_URL: "https://pagesurgeai-whm-gateway.onrender.com",
+  OAUTH_ISSUER: "https://auth.example.test",
+  OAUTH_AUDIENCE: "https://pagesurgeai-whm-gateway.onrender.com/mcp",
+  OAUTH_SCOPE: "whm:read",
   PORT: 3000,
   WHM_TIMEOUT_MS: 15000
 };
@@ -19,13 +22,13 @@ afterEach(() => vi.restoreAllMocks());
 async function connectedClient() {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const server = createMcpServer(config);
-  const client = new Client({ name: "gateway-test", version: "0.1.0" });
+  const client = new Client({ name: "gateway-test", version: "0.2.0" });
   await server.connect(serverTransport);
   await client.connect(clientTransport);
   return { client, server };
 }
 
-describe("PageSurgeAI WHM Gateway v0.1", () => {
+describe("PageSurgeAI WHM Gateway v0.2", () => {
   it("advertises exactly four read-only tools", async () => {
     const { client, server } = await connectedClient();
     const response = await client.listTools();
@@ -38,6 +41,7 @@ describe("PageSurgeAI WHM Gateway v0.1", () => {
     for (const tool of response.tools) {
       expect(tool.annotations?.readOnlyHint).toBe(true);
       expect(tool.annotations?.destructiveHint).toBe(false);
+      expect(tool._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["whm:read"] }]);
     }
     await client.close();
     await server.close();

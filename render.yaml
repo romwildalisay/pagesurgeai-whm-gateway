@@ -14,7 +14,13 @@ services:
         sync: false
       - key: WHM_API_TOKEN
         sync: false
-      - key: GATEWAY_API_KEY
+      - key: PUBLIC_BASE_URL
+        value: https://pagesurgeai-whm-gateway.onrender.com
+      - key: OAUTH_ISSUER
         sync: false
+      - key: OAUTH_AUDIENCE
+        value: https://pagesurgeai-whm-gateway.onrender.com/mcp
+      - key: OAUTH_SCOPE
+        value: whm:read
       - key: WHM_TIMEOUT_MS
         value: 15000

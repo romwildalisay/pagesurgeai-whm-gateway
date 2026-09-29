@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "pagesurgeai-whm": {
+      "type": "streamable-http",
+      "url": "https://pagesurgeai-whm-gateway.onrender.com/mcp"
+    }
+  }
+}

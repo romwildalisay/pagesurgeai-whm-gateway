@@ -28,8 +28,9 @@ function accountView(a: any) {
 
 export function createMcpServer(config: Config): McpServer {
   const whm = new WhmClient(config);
+  const securitySchemes = [{ type: "oauth2" as const, scopes: [config.OAUTH_SCOPE] }];
   const server = new McpServer(
-    { name: "pagesurgeai-whm-gateway", version: "0.1.0" },
+    { name: "pagesurgeai-whm-gateway", version: "0.2.0" },
     { instructions: "Read-only access to the configured PageSurgeAI WHM reseller account. Never imply that these tools can create, modify, suspend, restore, or delete hosting resources." }
   );
 
@@ -37,7 +38,8 @@ export function createMcpServer(config: Config): McpServer {
     title: "List hosting accounts",
     description: "List cPanel accounts visible to the configured WHM reseller. Use for inventory and account lookup. This tool never changes hosting state.",
     inputSchema: { search: z.string().trim().max(253).optional() },
-    annotations
+    annotations,
+    _meta: { securitySchemes }
   }, async ({ search }) => {
     const body = await whm.call("listaccts", search ? { search, searchtype: "domain" } : {});
     const accounts = extractAccounts(body).map(accountView);
@@ -48,7 +50,8 @@ export function createMcpServer(config: Config): McpServer {
     title: "Get hosting account",
     description: "Return details for one cPanel username. Use after listing accounts when an exact account needs inspection. This tool never changes hosting state.",
     inputSchema: { username: z.string().min(1).max(16) },
-    annotations
+    annotations,
+    _meta: { securitySchemes }
   }, async ({ username }) => {
     const user = validateCpanelUser(username);
     const body = await whm.call("accountsummary", { user });
@@ -60,7 +63,8 @@ export function createMcpServer(config: Config): McpServer {
     title: "List hosting packages",
     description: "List hosting packages available to the configured WHM reseller. This tool never changes hosting state.",
     inputSchema: {},
-    annotations
+    annotations,
+    _meta: { securitySchemes }
   }, async () => {
     const body = await whm.call("listpkgs");
     const packages = extractPackages(body);
@@ -71,7 +75,8 @@ export function createMcpServer(config: Config): McpServer {
     title: "Get hosting usage",
     description: "Return disk and bandwidth usage for one cPanel username. This tool never changes hosting state.",
     inputSchema: { username: z.string().min(1).max(16) },
-    annotations
+    annotations,
+    _meta: { securitySchemes }
   }, async ({ username }) => {
     const user = validateCpanelUser(username);
     const body = await whm.call("accountsummary", { user });

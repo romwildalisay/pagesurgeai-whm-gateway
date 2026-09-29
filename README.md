@@ -1,6 +1,6 @@
-# PageSurgeAI WHM Gateway v0.1
+# PageSurgeAI WHM Gateway v0.2
 
-A standalone, read-only MCP gateway for a cPanel/WHM reseller account.
+A standalone, read-only MCP gateway for a cPanel/WHM reseller account, with OAuth 2.1-compatible discovery for ChatGPT.
 
 ## Included tools
 
@@ -9,51 +9,52 @@ A standalone, read-only MCP gateway for a cPanel/WHM reseller account.
 - `hosting_list_packages`
 - `hosting_get_usage`
 
-No tool can create, change, suspend, restore, or delete hosting resources. There is no arbitrary WHM proxy and no shell or WP-CLI execution.
+No tool can create, change, suspend, restore, or delete hosting resources. There is no arbitrary WHM proxy, shell access, or WP-CLI execution.
+
+## What v0.2 fixes
+
+v0.1 required a custom bearer API key before MCP initialization. ChatGPT could not discover the tools or start a supported account-linking flow. v0.2:
+
+- allows MCP initialization and tool discovery without exposing WHM data;
+- publishes protected-resource metadata;
+- advertises the `whm:read` OAuth scope;
+- returns a standard MCP OAuth challenge when an unauthenticated tool is called;
+- verifies issuer, audience, signature, expiration, and scope on every tool call.
 
 ## Security boundary
 
-ChatGPT authenticates to this gateway using `GATEWAY_API_KEY`. The gateway separately authenticates to WHM using `WHM_API_TOKEN`. Never use the WHM token as the gateway key, put either secret in source control, or install this service inside a managed WordPress site.
+ChatGPT authenticates through an OAuth 2.1 identity provider. The gateway validates the access token and separately authenticates to WHM using `WHM_API_TOKEN`. The WHM token remains only in Render.
 
-## Local setup
+Use an established identity provider such as Auth0. Do not implement your own password or token issuer for production.
+
+## Environment variables
+
+| Variable | Purpose |
+| --- | --- |
+| `WHM_BASE_URL` | WHM HTTPS endpoint, normally ending in `:2087` |
+| `WHM_USERNAME` | Restricted reseller username |
+| `WHM_API_TOKEN` | Restricted WHM API token |
+| `PUBLIC_BASE_URL` | Render service origin without a trailing slash |
+| `OAUTH_ISSUER` | OAuth issuer origin without a trailing slash |
+| `OAUTH_AUDIENCE` | API audience; use the full public `/mcp` URL |
+| `OAUTH_SCOPE` | Required scope; default `whm:read` |
+| `WHM_TIMEOUT_MS` | Optional WHM timeout; default `15000` |
+
+## Local verification
 
 1. Install Node.js 20 or newer.
-2. Copy `.env.example` to `.env`.
-3. Fill in the real values locally. Do not send them in chat.
-4. Run `npm install`.
-5. Run `npm run build`.
+2. Copy `.env.example` to `.env` and fill in non-placeholder values.
+3. Run `npm ci`.
+4. Run `npm run build`.
+5. Run `npm test`.
 6. Run `npm start`.
-7. Confirm `http://localhost:3000/health` reports read-only mode.
-8. Test `http://localhost:3000/mcp` with MCP Inspector and a Bearer token.
+7. Confirm `/health` reports version `0.2.0` and `auth: oauth2`.
+8. Confirm `/.well-known/oauth-protected-resource` returns the configured issuer and `whm:read` scope.
 
-## Deployment
+## Deployment and ChatGPT
 
-Deploy the included Dockerfile to a standalone managed container host. Add all `.env.example` keys through the host's secret manager. The public MCP URL must use a valid HTTPS certificate and normally ends in `/mcp`.
+Follow `BEGINNER-DEPLOYMENT.md`. After Render is live, remove the old v0.1 MCP draft from ChatGPT and create a new developer-mode connection to the same `/mcp` URL. ChatGPT must rediscover the OAuth metadata and tools.
 
-Docker is optional. For a dashboard-only deployment with no local development tools, follow `BEGINNER-DEPLOYMENT.md`. The included `render.yaml` supplies the build, start, and health-check configuration.
+## Release gate
 
-Do not deploy until the WHM API token has only the reseller privileges required by these four read operations. Restrict the token by source IP when the selected host provides a stable outbound IP.
-
-## ChatGPT connection
-
-After deployment:
-
-1. Open ChatGPT Plugins and enable developer mode.
-2. Add the stable HTTPS endpoint, such as `https://gateway.example.com/mcp`.
-3. Select API-key/Bearer authentication.
-4. Enter `GATEWAY_API_KEY`, not the WHM token.
-5. Scan tools and confirm exactly four tools appear.
-6. Test read-only prompts before adding any future write tools.
-
-## Required tests
-
-- Valid key can initialize and list four tools.
-- Missing or invalid key returns HTTP 401.
-- Invalid cPanel usernames are rejected before WHM is called.
-- WHM timeouts return a redacted error.
-- Tool results never contain `WHM_API_TOKEN` or `GATEWAY_API_KEY`.
-- No write-capable WHM function is present in the source or advertised tool list.
-
-## Next release gate
-
-Do not add account creation until v0.1 completes repeated read-only tests against the isolated Namecheap laboratory account and its audit logs contain no secrets.
+Do not add write-capable WHM functions until the read-only gateway has completed repeated isolated testing, token revocation testing, and audit-log review.
