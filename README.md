@@ -1,4 +1,4 @@
-# PageSurgeAI WHM Gateway v0.2
+# PageSurgeAI WHM Gateway v0.2.1
 
 A standalone, read-only MCP gateway for a cPanel/WHM reseller account, with OAuth 2.1-compatible discovery for ChatGPT.
 
@@ -11,15 +11,16 @@ A standalone, read-only MCP gateway for a cPanel/WHM reseller account, with OAut
 
 No tool can create, change, suspend, restore, or delete hosting resources. There is no arbitrary WHM proxy, shell access, or WP-CLI execution.
 
-## What v0.2 fixes
+## What v0.2.1 fixes
 
-v0.1 required a custom bearer API key before MCP initialization. ChatGPT could not discover the tools or start a supported account-linking flow. v0.2:
+v0.1 required a custom bearer API key before MCP initialization. ChatGPT could not discover the tools or start a supported account-linking flow. v0.2.1:
 
 - allows MCP initialization and tool discovery without exposing WHM data;
 - publishes protected-resource metadata;
 - advertises the `whm:read` OAuth scope;
 - returns a standard MCP OAuth challenge when an unauthenticated tool is called;
 - verifies issuer, audience, signature, expiration, and scope on every tool call.
+- publishes Auth0's exact issuer identifier, including its required trailing slash.
 
 ## Security boundary
 
@@ -48,7 +49,7 @@ Use an established identity provider such as Auth0. Do not implement your own pa
 4. Run `npm run build`.
 5. Run `npm test`.
 6. Run `npm start`.
-7. Confirm `/health` reports version `0.2.0` and `auth: oauth2`.
+7. Confirm `/health` reports version `0.2.1` and `auth: oauth2`.
 8. Confirm `/.well-known/oauth-protected-resource` returns the configured issuer and `whm:read` scope.
 
 ## Deployment and ChatGPT

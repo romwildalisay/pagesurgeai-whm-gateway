@@ -22,13 +22,13 @@ afterEach(() => vi.restoreAllMocks());
 async function connectedClient() {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const server = createMcpServer(config);
-  const client = new Client({ name: "gateway-test", version: "0.2.0" });
+  const client = new Client({ name: "gateway-test", version: "0.2.1" });
   await server.connect(serverTransport);
   await client.connect(clientTransport);
   return { client, server };
 }
 
-describe("PageSurgeAI WHM Gateway v0.2", () => {
+describe("PageSurgeAI WHM Gateway v0.2.1", () => {
   it("advertises exactly four read-only tools", async () => {
     const { client, server } = await connectedClient();
     const response = await client.listTools();

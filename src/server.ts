@@ -13,11 +13,11 @@ const verifyAuthorization = createTokenVerifier(config);
 const resourceMetadataUrl = `${config.PUBLIC_BASE_URL}/.well-known/oauth-protected-resource`;
 const authChallenge = `Bearer resource_metadata="${resourceMetadataUrl}", scope="${config.OAUTH_SCOPE}"`;
 
-app.get("/health", (_req, res) => res.json({ status: "ok", name: "pagesurgeai-whm-gateway", version: "0.2.0", mode: "read-only", auth: "oauth2" }));
+app.get("/health", (_req, res) => res.json({ status: "ok", name: "pagesurgeai-whm-gateway", version: "0.2.1", mode: "read-only", auth: "oauth2" }));
 
 app.get("/.well-known/oauth-protected-resource", (_req, res) => res.json({
   resource: `${config.PUBLIC_BASE_URL}/mcp`,
-  authorization_servers: [config.OAUTH_ISSUER],
+  authorization_servers: [`${config.OAUTH_ISSUER}/`],
   scopes_supported: [config.OAUTH_SCOPE],
   resource_documentation: `${config.PUBLIC_BASE_URL}/health`
 }));
@@ -52,5 +52,5 @@ app.use((_err: unknown, _req: express.Request, res: express.Response, _next: exp
 });
 
 app.listen(config.PORT, "0.0.0.0", () => {
-  console.log(JSON.stringify({ event: "gateway_started", port: config.PORT, version: "0.2.0", mode: "read-only", auth: "oauth2" }));
+  console.log(JSON.stringify({ event: "gateway_started", port: config.PORT, version: "0.2.1", mode: "read-only", auth: "oauth2" }));
 });

@@ -12,4 +12,4 @@ Use the four read-only hosting tools for WHM inventory and usage questions.
 - Call `hosting_list_packages` to inspect available reseller packages.
 - Call `hosting_get_usage` with an exact cPanel username for disk and bandwidth usage.
 
-State clearly that v0.2 is read-only and requires an authenticated OAuth connection. Do not suggest that a successful lookup authorizes account creation, suspension, restoration, or deletion.
+State clearly that v0.2.1 is read-only and requires an authenticated OAuth connection. Do not suggest that a successful lookup authorizes account creation, suspension, restoration, or deletion.

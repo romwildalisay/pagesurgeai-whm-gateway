@@ -30,7 +30,7 @@ export function createMcpServer(config: Config): McpServer {
   const whm = new WhmClient(config);
   const securitySchemes = [{ type: "oauth2" as const, scopes: [config.OAUTH_SCOPE] }];
   const server = new McpServer(
-    { name: "pagesurgeai-whm-gateway", version: "0.2.0" },
+    { name: "pagesurgeai-whm-gateway", version: "0.2.1" },
     { instructions: "Read-only access to the configured PageSurgeAI WHM reseller account. Never imply that these tools can create, modify, suspend, restore, or delete hosting resources." }
   );
 
