@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "pagesurgeai-whm": {
+      "type": "streamable-http",
+      "url": "https://pagesurgeai-whm-gateway.onrender.com/mcp",
+      "headers": {}
+    }
+  }
+}
+

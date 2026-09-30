@@ -22,13 +22,13 @@ afterEach(() => vi.restoreAllMocks());
 async function connectedClient() {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const server = createMcpServer(config);
-  const client = new Client({ name: "gateway-test", version: "0.2.1" });
+  const client = new Client({ name: "gateway-test", version: "0.2.2" });
   await server.connect(serverTransport);
   await client.connect(clientTransport);
   return { client, server };
 }
 
-describe("PageSurgeAI WHM Gateway v0.2.1", () => {
+describe("PageSurgeAI WHM Gateway v0.2.2", () => {
   it("advertises exactly four read-only tools", async () => {
     const { client, server } = await connectedClient();
     const response = await client.listTools();
@@ -78,5 +78,17 @@ describe("PageSurgeAI WHM Gateway v0.2.1", () => {
     const whm = new WhmClient(config);
     await expect(whm.call("createacct", { username: "blocked" })).rejects.toThrow("not allowed");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("identifies WHM 403 as upstream rejection rather than an OAuth expiry", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("Forbidden", { status: 403 }));
+    const { client, server } = await connectedClient();
+    const response = await client.callTool({ name: "hosting_list_packages", arguments: {} });
+    expect(response.isError).toBe(true);
+    expect(JSON.stringify(response)).toContain("WHM returned HTTP 403");
+    expect(JSON.stringify(response)).toContain("Reconnecting Auth0 does not repair WHM credentials");
+    expect(JSON.stringify(response)).not.toContain(config.WHM_API_TOKEN);
+    await client.close();
+    await server.close();
   });
 });

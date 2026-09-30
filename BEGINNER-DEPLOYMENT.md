@@ -1,12 +1,14 @@
-# Beginner deployment: PageSurgeAI WHM Gateway v0.2.1
+# Beginner deployment: PageSurgeAI WHM Gateway v0.2.2
+
+If you deleted Auth0 applications, follow [FRESH-START.md](FRESH-START.md) before reconnecting.
 
 This update keeps Render and adds standards-based OAuth. You will use Auth0 for sign-in and access tokens rather than maintaining an authentication server yourself.
 
 ## Part 1: Update the GitHub repository
 
-1. Download and unzip `pagesurgeai-whm-gateway-v0.2.1.zip`.
-2. Open your existing private GitHub repository.
-3. Upload the v0.2.1 files over the existing files.
+1. Download and unzip `pagesurgeai-whm-gateway-v0.2.2.zip`.
+2. Open your existing GitHub repository.
+3. Upload the v0.2.2 files over the existing files.
 4. Do not upload `.env`, WHM tokens, passwords, or exported Auth0 secrets.
 5. Commit the update to the branch Render deploys.
 
@@ -41,7 +43,7 @@ Open the Render service, then **Environment**. Preserve the existing WHM values 
 | `OAUTH_AUDIENCE` | `https://pagesurgeai-whm-gateway.onrender.com/mcp` |
 | `OAUTH_SCOPE` | `whm:read` |
 
-Remove the obsolete `GATEWAY_API_KEY` after v0.2.1 is successfully deployed. It is no longer read by the application.
+Remove the obsolete `GATEWAY_API_KEY` after v0.2.2 is successfully deployed. It is no longer read by the application.
 
 Select **Save, rebuild, and deploy**.
 
@@ -53,7 +55,7 @@ Open:
 
 Expected fields:
 
-`{"status":"ok","name":"pagesurgeai-whm-gateway","version":"0.2.1","mode":"read-only","auth":"oauth2"}`
+`{"status":"ok","name":"pagesurgeai-whm-gateway","version":"0.2.2","mode":"read-only","auth":"oauth2"}`
 
 Then open:
 
