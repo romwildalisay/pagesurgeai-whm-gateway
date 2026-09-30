@@ -26,10 +26,16 @@ export class WhmClient {
         headers: {
           Authorization: `whm ${this.config.WHM_USERNAME}:${this.config.WHM_API_TOKEN}`,
           Accept: "application/json",
-          "User-Agent": "PageSurgeAI-WHM-Gateway/0.1.0"
+          "User-Agent": "PageSurgeAI-WHM-Gateway/0.2.2"
         },
         signal: controller.signal
       });
+      if (response.status === 401 || response.status === 403) {
+        throw new WhmError(
+          `WHM returned HTTP ${response.status}. The hosting request was rejected upstream. Check WHM_BASE_URL, WHM_USERNAME, WHM_API_TOKEN, token permissions, and any WHM firewall or IP restrictions in Render/WHM. Reconnecting Auth0 does not repair WHM credentials.`,
+          response.status
+        );
+      }
       if (!response.ok) throw new WhmError(`WHM returned HTTP ${response.status}`, response.status);
       const body = await response.json() as any;
       const metadata = body?.metadata;

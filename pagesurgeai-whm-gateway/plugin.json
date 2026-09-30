@@ -1,9 +1,11 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "pagesurgeai-whm-gateway",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Inspect PageSurgeAI WHM hosting accounts, packages, and usage through four read-only tools.",
-  "author": { "name": "PageSurgeAI" },
+  "author": {
+    "name": "PageSurgeAI"
+  },
   "extensions": {
     "com.openai": {
       "interface": {
@@ -12,7 +14,9 @@
         "longDescription": "Review cPanel accounts, hosting packages, and resource usage through a restricted read-only WHM gateway.",
         "developerName": "PageSurgeAI",
         "category": "Developer Tools",
-        "capabilities": ["Interactive"],
+        "capabilities": [
+          "Interactive"
+        ],
         "defaultPrompt": [
           "Show all hosting accounts without making changes.",
           "List the available WHM hosting packages.",
@@ -22,3 +26,4 @@
     }
   }
 }
+

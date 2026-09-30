@@ -1,4 +1,4 @@
-# PageSurgeAI WHM Gateway v0.2.1
+# PageSurgeAI WHM Gateway v0.2.2
 
 A standalone, read-only MCP gateway for a cPanel/WHM reseller account, with OAuth 2.1-compatible discovery for ChatGPT.
 
@@ -11,9 +11,18 @@ A standalone, read-only MCP gateway for a cPanel/WHM reseller account, with OAut
 
 No tool can create, change, suspend, restore, or delete hosting resources. There is no arbitrary WHM proxy, shell access, or WP-CLI execution.
 
-## What v0.2.1 fixes
+## What v0.2.2 fixes
 
-v0.1 required a custom bearer API key before MCP initialization. ChatGPT could not discover the tools or start a supported account-linking flow. v0.2.1:
+The existing OAuth/read-only behavior remains. The v0.2.2 rebuild adds:
+
+- a fresh-start guide for deleted Auth0 clients;
+- distinct WHM 401/403 remediation messages;
+- explicit process-only health reporting;
+- the path-specific protected-resource metadata route;
+- standard OAuth challenge error values;
+- HTTP authentication-boundary regression tests.
+
+Preserved protections:
 
 - allows MCP initialization and tool discovery without exposing WHM data;
 - publishes protected-resource metadata;
@@ -49,12 +58,12 @@ Use an established identity provider such as Auth0. Do not implement your own pa
 4. Run `npm run build`.
 5. Run `npm test`.
 6. Run `npm start`.
-7. Confirm `/health` reports version `0.2.1` and `auth: oauth2`.
+7. Confirm `/health` reports version `0.2.2` and `auth: oauth2`.
 8. Confirm `/.well-known/oauth-protected-resource` returns the configured issuer and `whm:read` scope.
 
 ## Deployment and ChatGPT
 
-Follow `BEGINNER-DEPLOYMENT.md`. After Render is live, remove the old v0.1 MCP draft from ChatGPT and create a new developer-mode connection to the same `/mcp` URL. ChatGPT must rediscover the OAuth metadata and tools.
+Follow `BEGINNER-DEPLOYMENT.md` for deployment. If you deleted Auth0 applications, use [FRESH-START.md](FRESH-START.md) to replace the invalid client registration. An update alone does not recreate deleted OAuth clients.
 
 ## Release gate
 
