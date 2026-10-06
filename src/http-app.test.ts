@@ -26,6 +26,28 @@ async function endpoint(verifier?: Parameters<typeof createGatewayApp>[1]) {
 }
 
 describe("HTTP OAuth boundary", () => {
+  it.each(["GET", "POST"])("challenges unauthenticated %s connection probes", async (method) => {
+    const base = await endpoint(async () => ({ ok: false, reason: "missing_token" }));
+    const response = await fetch(base + "/mcp", { method,
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      ...(method === "POST" ? { body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize",
+        params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } } }) } : {}) });
+    expect(response.status).toBe(401);
+    expect(response.headers.get("www-authenticate")).toContain('/.well-known/oauth-protected-resource/mcp');
+  });
+  it("allows authenticated initialization without querying WHM", async () => {
+    const whm = vi.spyOn(WhmClient.prototype, "call");
+    const verify = vi.fn(async () => ({ ok: true as const, subject: "test-user" }));
+    const base = await endpoint(verify);
+    const response = await fetch(base + "/mcp", { method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize",
+        params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } } }) });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('serverInfo');
+    expect(verify).toHaveBeenCalledWith("Bearer test-token");
+    expect(whm).not.toHaveBeenCalled();
+  });
   it("serves both metadata locations with Auth0's canonical issuer", async () => {
     const base = await endpoint();
     for (const path of ["/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp"]) {
@@ -52,8 +74,8 @@ describe("HTTP OAuth boundary", () => {
       const expected = reason === "insufficient_scope" ? "insufficient_scope" : "invalid_token";
       expect(response.headers.get("www-authenticate")).toContain(`error="${expected}"`);
       const body = await response.json();
-      expect(body.result.isError).toBe(true);
-      expect(body.result._meta["mcp/www_authenticate"][0]).toContain('scope="whm:read"');
+      expect(response.status).toBe(reason === "insufficient_scope" ? 403 : 401);
+      expect(body.error).toBe(expected);
       expect(whm).not.toHaveBeenCalled();
     }
   );

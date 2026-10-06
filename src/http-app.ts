@@ -10,10 +10,10 @@ export function createGatewayApp(config: Config, verifier?: (value: string | und
   app.use(express.json({ limit: "1mb" }));
 
   const verifyAuthorization = verifier ?? createTokenVerifier(config);
-  const resourceMetadataUrl = `${config.PUBLIC_BASE_URL}/.well-known/oauth-protected-resource`;
+  const resourceMetadataUrl = `${config.PUBLIC_BASE_URL}/.well-known/oauth-protected-resource/mcp`;
   const authChallenge = `Bearer resource_metadata="${resourceMetadataUrl}", scope="${config.OAUTH_SCOPE}"`;
 
-  app.get("/health", (_req, res) => res.json({ status: "ok", name: "pagesurgeai-whm-gateway", version: "0.2.2", mode: "read-only", auth: "oauth2", checks: { process: "ok", oauth_link: "not_checked", whm: "not_checked" } }));
+  app.get("/health", (_req, res) => res.json({ status: "ok", name: "pagesurgeai-whm-gateway", version: "0.2.3", mode: "read-only", auth: "oauth2", checks: { process: "ok", oauth_link: "not_checked", whm: "not_checked" } }));
 
   app.get(["/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp"], (_req, res) => res.json({
     resource: `${config.PUBLIC_BASE_URL}/mcp`,
@@ -22,23 +22,22 @@ export function createGatewayApp(config: Config, verifier?: (value: string | und
     resource_documentation: `${config.PUBLIC_BASE_URL}/health`
   }));
 
-  app.post("/mcp", async (req, res) => {
-    if (req.body?.method === "tools/call") {
-      const auth = await verifyAuthorization(req.header("authorization"));
-      if (!auth.ok) {
-        const oauthError = auth.reason === "insufficient_scope" ? "insufficient_scope" : "invalid_token";
-        res.setHeader("WWW-Authenticate", `${authChallenge}, error="${oauthError}", error_description="Connect PageSurgeAI WHM Gateway to continue"`);
-        return res.status(200).json({
-          jsonrpc: "2.0",
-          id: req.body?.id ?? null,
-          result: {
-            content: [{ type: "text", text: "Authentication required. Connect PageSurgeAI WHM Gateway and try again." }],
-            isError: true,
-            _meta: { "mcp/www_authenticate": [`${authChallenge}, error="${oauthError}", error_description="Connect PageSurgeAI WHM Gateway to continue"`] }
-          }
-        });
-      }
+  // Protect the connection handshake as well as tool calls so standard MCP
+  // clients receive an HTTP auth challenge before starting the OAuth flow.
+  app.all("/mcp", async (req, res, next) => {
+    const auth = await verifyAuthorization(req.header("authorization"));
+    if (!auth.ok) {
+      const oauthError = auth.reason === "insufficient_scope" ? "insufficient_scope" : "invalid_token";
+      res.setHeader("WWW-Authenticate", `${authChallenge}, error="${oauthError}", error_description="Connect PageSurgeAI WHM Gateway to continue"`);
+      return res.status(auth.reason === "insufficient_scope" ? 403 : 401).json({
+        error: oauthError,
+        error_description: "Connect PageSurgeAI WHM Gateway to continue"
+      });
     }
+    next();
+  });
+
+  app.post("/mcp", async (req, res) => {
     const server = createMcpServer(config);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on("close", () => { void transport.close(); void server.close(); });
