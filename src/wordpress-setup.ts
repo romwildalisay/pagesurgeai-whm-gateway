@@ -25,22 +25,23 @@ export class SoftaculousClient {
       const data = await new WhmClient(this.config).createCpanelSession(this.config.CPANEL_USERNAME);
       const url = new URL(data.url);
       const token = data.cp_security_token;
-      if (url.origin !== origin || url.username || url.password || !/^\/cpsess[0-9]+$/.test(token) || !url.pathname.startsWith(`${token}/login`)) throw new Error("Untrusted session URL");
+      if (url.origin !== origin || url.username || url.password) throw new Error("WHM session activation: login URL did not match the configured HTTPS cPanel origin.");
+      if (!/^\/cpsess[0-9]+$/.test(token) || !url.pathname.startsWith(`${token}/login`)) throw new Error("WHM session activation: session token or login path format was not recognized.");
       const response = await fetch(url, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(this.config.WHM_TIMEOUT_MS) });
-      if (response.status !== 200 && response.status !== 302 && response.status !== 303) throw new Error("Session login rejected");
+      if (response.status !== 200 && response.status !== 302 && response.status !== 303) throw new Error(`WHM session activation: cPanel login returned HTTP ${response.status}.`);
       const location = response.headers.get("location");
       if (location) {
         const target = new URL(location, url);
-        if (target.origin !== origin || target.username || target.password || !target.pathname.startsWith(`${token}/`)) throw new Error("Untrusted session redirect");
+        if (target.origin !== origin || target.username || target.password || !target.pathname.startsWith(`${token}/`)) throw new Error("WHM session activation: login redirected outside the expected cPanel session path.");
       }
       // Keep this short-lived cookie only in this request's client instance.
       // It is sent solely to the validated HTTPS cPanel origin, never to WHM.
       const cookies = response.headers.getSetCookie().map(value => value.split(";", 1)[0]).filter(value => /^[A-Za-z0-9_-]+=[^\r\n;]+$/.test(value));
-      if (!cookies.some(value => /session=/i.test(value))) throw new Error("Session cookie missing");
+      if (!cookies.some(value => /session=/i.test(value))) throw new Error("WHM session activation: cPanel did not return a usable session cookie.");
       this.session = { token, cookie: cookies.join("; ") };
       return this.session;
     } catch (error) {
-      if (error instanceof Error && error.message.startsWith("WHM reseller session creation failed")) throw error;
+      if (error instanceof Error && (error.message.startsWith("WHM reseller session creation failed") || error.message.startsWith("WHM session activation:"))) throw error;
       throw new Error("WHM reseller session could not be activated securely. No Softaculous request was made; no hosting changes were made.");
     }
   }

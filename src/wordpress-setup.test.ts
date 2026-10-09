@@ -134,13 +134,13 @@ it("uses the existing WHM token for a temporary test-account session without cPa
 it.each(["https://attacker.test:2083/cpsess123456/login/?session=secret", "http://whm.example.test:2083/cpsess123456/login/?session=secret", "https://whm.example.test:2083/untrusted?session=secret"])("rejects unsafe session URLs before sending session secrets", async url => {
   vi.spyOn(WhmClient.prototype, "createCpanelSession").mockResolvedValue(sessionData(url));
   const fetch = vi.spyOn(globalThis, "fetch");
-  await expect(new SoftaculousClient(sessionConfig).installations()).rejects.toThrow("activated securely");
+  await expect(new SoftaculousClient(sessionConfig).installations()).rejects.toThrow("WHM session activation:");
   expect(fetch).not.toHaveBeenCalled();
 });
 it("does not follow a session login redirect to another host or expose secrets", async () => {
   vi.spyOn(WhmClient.prototype, "createCpanelSession").mockResolvedValue(sessionData());
   const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 302, headers: { "set-cookie": "cpsession=private-cookie", location: "https://attacker.test/?private-secret" } }));
-  await expect(new SoftaculousClient(sessionConfig).installations()).rejects.toThrow("activated securely");
+  await expect(new SoftaculousClient(sessionConfig).installations()).rejects.toThrow("WHM session activation:");
   expect(fetch).toHaveBeenCalledOnce();
 });
 it("does not make Softaculous calls when the existing WHM token cannot create a session", async () => {
