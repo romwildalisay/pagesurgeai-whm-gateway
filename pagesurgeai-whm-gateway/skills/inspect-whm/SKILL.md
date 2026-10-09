@@ -31,11 +31,11 @@ If the user deleted an Auth0 application, use [fresh connection recovery](refere
 
 ## WordPress setup on the test account
 
-Use `hosting_get_wordpress_status` with the exact test-account username to inspect Softaculous before installation. The server verifies reseller ownership and restricts access to `CPANEL_USERNAME` configured privately in Render. Never suggest granting root or session-impersonation privileges.
+Use `hosting_get_wordpress_status` with the exact test-account username to inspect Softaculous before installation. The server verifies reseller ownership and restricts access to `CPANEL_USERNAME` configured privately in Render. Use the existing WHM reseller token for a temporary cPanel session; keep cookies and session URLs private. Never request root access or automatically change token/reseller privileges. If session creation is rejected, report the failure and required operation without claiming authentication succeeded.
 
 Require the target domain, site title, and admin email. Install only on the test account's primary domain at its HTTPS root. Treat a user request to proceed with WordPress setup on a named domain as authorization to install there; honor authorization already provided. Call `hosting_install_wordpress` with those settings and `confirm: true` only within that request.
 
-Installation requires `whm:read whm:wordpress` and the test account's private `CPANEL_USERNAME`/`CPANEL_PASSWORD` configuration in Render. Ask the user to enter credentials only in Render's secure environment settings, never in chat. The adapter uses the WHM hostname over HTTPS on cPanel port 2083 with the Jupiter Softaculous endpoint; authentication or endpoint availability must be tested on the actual server.
+Installation requires `whm:read whm:wordpress`, the existing backend WHM reseller token, and `CPANEL_USERNAME` identifying the restricted test account in Render. By default, `CPANEL_AUTH_MODE=whm-session` creates a temporary session via WHM `create_user_session`; individual cPanel passwords are not required. Keep ownership and test-account checks before all operations. The optional legacy `CPANEL_AUTH_MODE=password` adapter requires `CPANEL_PASSWORD` entered only in Render's secure environment settings, never in chat. The adapter uses the WHM hostname over HTTPS on cPanel port 2083 with the Jupiter Softaculous endpoint; authentication or endpoint availability must be tested on the actual server.
 
 Never disable TLS verification, overwrite files, reinstall an existing site, or retry an uncertain write blindly. Inspect WordPress Manager and inventory after timeout or partial success. An empty Softaculous inventory does not prove that no unmanaged website files exist.
 
