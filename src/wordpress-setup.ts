@@ -83,7 +83,7 @@ export class SoftaculousClient {
     url.port = "2083";
     url.pathname = "/frontend/jupiter/softaculous/index.live.php";
     url.username = ""; url.password = ""; url.search = ""; url.hash = "";
-    url.searchParams.set("api", "json"); url.searchParams.set("act", action === "installations" ? "home" : action);
+    url.searchParams.set("api", "json"); url.searchParams.set("act", action);
     if (action === "software") url.searchParams.set("soft", "26");
     const writing = action === "software";
     const passwordMode = this.config.CPANEL_AUTH_MODE === "password";
@@ -116,7 +116,7 @@ export class SoftaculousClient {
   async installations(): Promise<Installation[]> {
     const body = await this.request("installations");
     if (hasErrors(body.error)) throw new Error("Softaculous reported an API error while reading inventory. No installation was started.");
-    if (!body.iscripts || typeof body.iscripts !== "object") throw new Error(`Softaculous installation inventory could not be verified (iscripts: ${body.iscripts === null ? "null" : typeof body.iscripts}). No installation was started.`);
+    if (!body.installations || typeof body.installations !== "object") throw new Error(`Softaculous installation inventory could not be verified (installations: ${body.installations === null ? "null" : typeof body.installations}). No installation was started.`);
     const installations: Installation[] = [];
     // Support flat installation IDs and per-script groups. Fail closed if a
     // nonempty inventory has an unfamiliar structure; never infer it is empty.
@@ -134,8 +134,8 @@ export class SoftaculousClient {
       }
       return Object.entries(value).reduce((count, [childKey, child]) => count + inspect(child, childKey, isWordpress, depth + 1), 0);
     }
-    const recognized = inspect(body.iscripts, "", false, 0);
-    if (Object.keys(body.iscripts).length && !recognized) throw new Error("Softaculous inventory format was not recognized. Inspect WordPress Manager; no installation was started.");
+    const recognized = inspect(body.installations, "", false, 0);
+    if (Object.keys(body.installations).length && !recognized) throw new Error("Softaculous inventory format was not recognized. Inspect WordPress Manager; no installation was started.");
     return installations;
   }
 }

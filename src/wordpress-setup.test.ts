@@ -21,13 +21,13 @@ it("requires explicit confirmation and restricts the account, domain, and owner 
 
 it("lists nested and flat WordPress entries without returning stored secrets or URL credentials", async () => {
   account();
-  vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValue({ iscripts: { "26": { "26_1": { softurl: "https://user:secret@lab.example.com/?secret=private", admin_pass: "private", dbpass: "private" } } } });
+  vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValue({ installations: { "26": { "26_1": { softurl: "https://user:secret@lab.example.com/?secret=private", admin_pass: "private", dbpass: "private" } } } });
   const status = await wordpressStatus(config, input.username);
   expect(status.installations).toEqual([{ id: "26_1", url: "https://lab.example.com/" }]);
   expect(JSON.stringify(status)).not.toMatch(/private|secret/);
 });
 
-it.each([{}, { iscripts: { unfamiliar: 1 } }, { error: ["denied"], iscripts: [] }, { iscripts: { "26_1": { softurl: "invalid-url" } } }])("fails closed for missing or unverified inventory", async (body) => {
+it.each([{}, { installations: { unfamiliar: 1 } }, { error: ["denied"], installations: [] }, { installations: { "26_1": { softurl: "invalid-url" } } }])("fails closed for missing or unverified inventory", async (body) => {
   account();
   const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValue(body);
   await expect(installWordpress(config, input)).rejects.toThrow();
@@ -37,7 +37,7 @@ it.each([{}, { iscripts: { unfamiliar: 1 } }, { error: ["denied"], iscripts: [] 
 
 it("does not reinstall WordPress already listed on this domain", async () => {
   account();
-  const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValue({ iscripts: { "26_1": { softurl: "https://lab.example.com/" } } });
+  const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValue({ installations: { "26_1": { softurl: "https://lab.example.com/" } } });
   expect((await installWordpress(config, input)).status).toBe("already_exists");
   expect(api).toHaveBeenCalledTimes(1);
 });
@@ -45,7 +45,7 @@ it("does not reinstall WordPress already listed on this domain", async () => {
 it("verifies HTTPS and posts only WordPress install fields without enabling overwrite", async () => {
   account();
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 200 }));
-  const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValueOnce({ iscripts: {} }).mockResolvedValueOnce({ done: true, __settings: { admin_pass: "raw-secret" } });
+  const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValueOnce({ installations: {} }).mockResolvedValueOnce({ done: true, __settings: { admin_pass: "raw-secret" } });
   const result = await installWordpress(config, input);
   const fields = api.mock.calls[1][1]!;
   expect(fields.get("softproto")).toBe("3");
@@ -60,16 +60,16 @@ it("verifies HTTPS and posts only WordPress install fields without enabling over
 it("blocks an installation when HTTPS is unavailable", async () => {
   account();
   vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("TLS failed"));
-  const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValue({ iscripts: {} });
+  const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValue({ installations: {} });
   await expect(installWordpress(config, input)).rejects.toThrow("HTTPS could not be verified");
   expect(api).toHaveBeenCalledTimes(1);
 });
 
 it("uses cPanel Basic authentication only in headers, with HTTPS and redirects disabled", async () => {
-  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ iscripts: {} })));
+  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ installations: {} })));
   await new SoftaculousClient(config).installations();
   const [url, options] = fetch.mock.calls[0];
-  expect(String(url)).toBe("https://whm.example.test:2083/frontend/jupiter/softaculous/index.live.php?api=json&act=home");
+  expect(String(url)).toBe("https://whm.example.test:2083/frontend/jupiter/softaculous/index.live.php?api=json&act=installations");
   expect(String(url)).not.toContain(config.CPANEL_PASSWORD);
   expect(options?.redirect).toBe("error");
   expect((options?.headers as any).Authorization).toBe(`Basic ${Buffer.from("labsite:cpanel-private-secret").toString("base64")}`);
@@ -90,7 +90,7 @@ it("reports write uncertainty without retrying or leaking the thrown error", asy
 it.each([{ done: false }, { done: true, setupcontinue: "more" }, { error: ["secret"] }])("does not claim success from an unsuccessful or partial installation response", async (body) => {
   account();
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(""));
-  vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValueOnce({ iscripts: {} }).mockResolvedValueOnce(body);
+  vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValueOnce({ installations: {} }).mockResolvedValueOnce(body);
   await expect(installWordpress(config, input)).rejects.toThrow();
 });
 
@@ -121,13 +121,13 @@ it("uses the existing WHM token for a temporary test-account session without cPa
   const session = vi.spyOn(WhmClient.prototype, "createCpanelSession").mockResolvedValue(sessionData());
   const fetch = vi.spyOn(globalThis, "fetch")
     .mockResolvedValueOnce(new Response("", { status: 302, headers: { "set-cookie": "cpsession=private-cookie; Secure; HttpOnly; Path=/", location: "/cpsess123456/frontend/jupiter/index.html" } }))
-    .mockImplementation(async () => new Response(JSON.stringify({ iscripts: {} })));
+    .mockImplementation(async () => new Response(JSON.stringify({ installations: {} })));
   const client = new SoftaculousClient(sessionConfig);
   await client.installations();
   await client.installations();
   expect(session).toHaveBeenCalledOnce();
   expect(session).toHaveBeenCalledWith("labsite");
-  expect(String(fetch.mock.calls[2][0])).toBe("https://whm.example.test:2083/cpsess123456/frontend/jupiter/softaculous/index.live.php?api=json&act=home");
+  expect(String(fetch.mock.calls[2][0])).toBe("https://whm.example.test:2083/cpsess123456/frontend/jupiter/softaculous/index.live.php?api=json&act=installations");
   expect(fetch.mock.calls[0][1]?.redirect).toBe("manual");
   expect(fetch.mock.calls[2][1]?.headers).toEqual({ Cookie: "cpsession=private-cookie", Accept: "application/json" });
 });
@@ -166,9 +166,14 @@ it("activates cPanel sessions through same-origin HTTP 307 redirects while retai
     .mockResolvedValueOnce(new Response("", { status: 307, headers: { location: "/cpsess123456/login/?next=1" } }))
     .mockResolvedValueOnce(new Response("", { status: 302, headers: { "set-cookie": "cpsession=private-cookie; Secure; HttpOnly", location: "/cpsess987654/frontend/jupiter/index.html" } }))
     .mockResolvedValueOnce(new Response("ok"))
-    .mockResolvedValueOnce(new Response(JSON.stringify({ iscripts: {} })));
+    .mockResolvedValueOnce(new Response(JSON.stringify({ installations: {} })));
   expect(await new SoftaculousClient(sessionConfig).installations()).toEqual([]);
   expect(fetch).toHaveBeenCalledTimes(4);
   expect(fetch.mock.calls[2][1]?.headers).toEqual({ Cookie: "cpsession=private-cookie" });
   expect(String(fetch.mock.calls[3][0])).toContain("/cpsess987654/frontend/jupiter/softaculous/index.live.php");
+});
+
+it("does not confuse Softaculous software catalog entries with installation inventory", async () => {
+  vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValue({ iscripts: { "26": { name: "WordPress" } } });
+  await expect(new SoftaculousClient(config).installations()).rejects.toThrow("inventory could not be verified");
 });
