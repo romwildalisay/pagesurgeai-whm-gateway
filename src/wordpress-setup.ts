@@ -21,6 +21,21 @@ export class SoftaculousClient {
     if (!this.config.CPANEL_USERNAME || !this.config.CPANEL_PASSWORD) throw new Error("WordPress setup is not configured. Set CPANEL_USERNAME and CPANEL_PASSWORD privately in Render; never send passwords in chat.");
     return { username: this.config.CPANEL_USERNAME, password: this.config.CPANEL_PASSWORD };
   }
+  private async authenticationDiagnostic(origin: string): Promise<string> {
+    const credentials = this.credentials();
+    const url = new URL("/execute/Variables/get_user_information", origin);
+    url.searchParams.set("name", "user");
+    try {
+      const response = await fetch(url, { method: "GET", redirect: "error",
+        headers: { Authorization: `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64")}`, Accept: "application/json" },
+        signal: AbortSignal.timeout(5000) });
+      if (response.status === 401 || response.status === 403) return `cPanel's read-only UAPI also returned HTTP ${response.status}. Check server-side API access/IP/security policies; a correct browser password alone does not prove API access from Render.`;
+      if (!response.ok) return `The read-only UAPI check returned HTTP ${response.status}; authentication could not be verified.`;
+      const body = await response.json();
+      if (body?.result?.status === 1) return "The same credentials succeeded on cPanel's read-only UAPI. The rejection is specific to the Softaculous endpoint or its access policy, not evidence of an incorrect password.";
+      return "The read-only UAPI response did not confirm successful authentication.";
+    } catch { return "The read-only UAPI authentication check could not be completed securely."; }
+  }
   async request(action: "installations" | "software", params?: URLSearchParams): Promise<any> {
     const credentials = this.credentials();
     const url = new URL(this.config.WHM_BASE_URL);
@@ -34,7 +49,10 @@ export class SoftaculousClient {
       const response = await fetch(url, { method: writing ? "POST" : "GET", redirect: "error",
         headers: { Authorization: `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64")}`, Accept: "application/json" },
         ...(writing ? { body: params } : {}), signal: AbortSignal.timeout(this.config.WHM_TIMEOUT_MS) });
-      if (response.status === 401 || response.status === 403) throw new Error("cPanel rejected Softaculous authentication. Verify the test account's cPanel credentials in Render; reconnecting Auth0 will not fix them.");
+      if (response.status === 401 || response.status === 403) {
+        const diagnostic = writing ? "No installation was confirmed. Check inventory before retrying." : await this.authenticationDiagnostic(url.origin);
+        throw new Error(`cPanel rejected Softaculous authentication with HTTP ${response.status} at ${url.origin} for ${credentials.username}. ${diagnostic} Reconnecting Auth0 does not fix this upstream rejection.`);
+      }
       if (!response.ok) throw new Error(writing ? "WordPress installation could not be confirmed. Inspect Softaculous before retrying." : "Softaculous inventory is unavailable.");
       const body = await response.json();
       if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Softaculous response was not recognized. Inspect WordPress Manager before retrying.");

@@ -93,3 +93,22 @@ it.each([{ done: false }, { done: true, setupcontinue: "more" }, { error: ["secr
   vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValueOnce({ iscripts: {} }).mockResolvedValueOnce(body);
   await expect(installWordpress(config, input)).rejects.toThrow();
 });
+
+it("distinguishes a Softaculous-specific rejection from working cPanel API authentication", async () => {
+  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response("denied", { status: 403 })).mockResolvedValueOnce(new Response(JSON.stringify({ result: { status: 1, data: { user: "labsite", private: "secret" } } })));
+  await expect(new SoftaculousClient(config).installations()).rejects.toThrow("same credentials succeeded");
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(String(fetch.mock.calls[1][0])).toContain("/execute/Variables/get_user_information?name=user");
+  expect(fetch.mock.calls[1][1]?.method).toBe("GET");
+});
+
+it("reports an upstream UAPI policy rejection without assuming the password is wrong", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response("denied", { status: 401 })).mockResolvedValueOnce(new Response("denied", { status: 403 }));
+  await expect(new SoftaculousClient(config).installations()).rejects.toThrow("UAPI also returned HTTP 403");
+});
+
+it("never performs authentication diagnostics or retries following a rejected write", async () => {
+  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("denied", { status: 403 }));
+  await expect(new SoftaculousClient(config).request("software", new URLSearchParams())).rejects.toThrow("No installation was confirmed");
+  expect(fetch).toHaveBeenCalledTimes(1);
+});

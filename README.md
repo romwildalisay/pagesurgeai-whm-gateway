@@ -1,4 +1,4 @@
-# PageSurgeAI WHM Gateway v0.4.0
+# PageSurgeAI WHM Gateway v0.4.1
 
 A Node.js MCP gateway for a cPanel/WHM reseller, with Auth0 authentication, five read-only tools and separately authorized account-creation and WordPress-installation tools.
 
@@ -45,7 +45,7 @@ The WHM token belongs only in Render's environment. Never place credentials in r
 | `OAUTH_SCOPE` | Base read permission, default `whm:read`; creation also requires `whm:create` |
 | `WHM_TIMEOUT_MS` | WHM request timeout, default `15000` |
 
-Run `npm ci`, `npm run build`, and `npm test` before deployment. Tests mock WHM writes and do not create hosting resources. `/health` reports version `0.4.0` and process status only; it does not test OAuth or WHM. Protected-resource metadata advertises all three scopes.
+Run `npm ci`, `npm run build`, and `npm test` before deployment. Tests mock WHM writes and do not create hosting resources. `/health` reports version `0.4.1` and process status only; it does not test OAuth or WHM. Protected-resource metadata advertises all three scopes.
 
 For deployment, see `BEGINNER-DEPLOYMENT.md`. Use `FRESH-START.md` only when recovering a deleted Auth0 client; enabling creation does not require deleting or recreating a working application.
 
@@ -73,3 +73,5 @@ Add `whm:wordpress` to the Auth0 API permissions. With RBAC enabled, grant that 
 No automatic retries or durable background jobs are provided. A slow installation may finish after a client timeout; inspect WordPress Manager before retrying. WordPress MCP plugin installation is a separate later extension.
 
 Reference: https://www.softaculous.com/docs/api/api/
+
+On a Softaculous inventory HTTP 401/403, the gateway now runs one read-only UAPI authentication probe with the same credentials. It reports only the HTTP outcome and whether UAPI succeeded, distinguishing general cPanel API rejection from a Softaculous-specific restriction. No raw response or credentials are returned. This probe is never run after an installation write.
