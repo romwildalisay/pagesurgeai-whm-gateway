@@ -127,9 +127,9 @@ it("uses the existing WHM token for a temporary test-account session without cPa
   await client.installations();
   expect(session).toHaveBeenCalledOnce();
   expect(session).toHaveBeenCalledWith("labsite");
-  expect(String(fetch.mock.calls[1][0])).toBe("https://whm.example.test:2083/cpsess123456/frontend/jupiter/softaculous/index.live.php?api=json&act=installations");
+  expect(String(fetch.mock.calls[2][0])).toBe("https://whm.example.test:2083/cpsess123456/frontend/jupiter/softaculous/index.live.php?api=json&act=installations");
   expect(fetch.mock.calls[0][1]?.redirect).toBe("manual");
-  expect(fetch.mock.calls[1][1]?.headers).toEqual({ Cookie: "cpsession=private-cookie", Accept: "application/json" });
+  expect(fetch.mock.calls[2][1]?.headers).toEqual({ Cookie: "cpsession=private-cookie", Accept: "application/json" });
 });
 it.each(["https://attacker.test:2083/cpsess123456/login/?session=secret", "http://whm.example.test:2083/cpsess123456/login/?session=secret", "https://whm.example.test:2083/untrusted?session=secret"])("rejects unsafe session URLs before sending session secrets", async url => {
   vi.spyOn(WhmClient.prototype, "createCpanelSession").mockResolvedValue(sessionData(url));
@@ -158,4 +158,17 @@ it("WHM session creation stays restricted and sends only the WHM token to WHM", 
   expect(String(fetch.mock.calls[0][0])).toContain("/json-api/create_user_session?");
   expect((fetch.mock.calls[0][1]?.headers as any).Authorization).toBe(`whm reseller:${config.WHM_API_TOKEN}`);
   expect(String(fetch.mock.calls[0][0])).toContain("user=labsite");
+});
+
+it("activates cPanel sessions through same-origin HTTP 307 redirects while retaining cookies", async () => {
+  vi.spyOn(WhmClient.prototype, "createCpanelSession").mockResolvedValue(sessionData());
+  const fetch = vi.spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce(new Response("", { status: 307, headers: { location: "/cpsess123456/login/?next=1" } }))
+    .mockResolvedValueOnce(new Response("", { status: 302, headers: { "set-cookie": "cpsession=private-cookie; Secure; HttpOnly", location: "/cpsess987654/frontend/jupiter/index.html" } }))
+    .mockResolvedValueOnce(new Response("ok"))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ iscripts: {} })));
+  expect(await new SoftaculousClient(sessionConfig).installations()).toEqual([]);
+  expect(fetch).toHaveBeenCalledTimes(4);
+  expect(fetch.mock.calls[2][1]?.headers).toEqual({ Cookie: "cpsession=private-cookie" });
+  expect(String(fetch.mock.calls[3][0])).toContain("/cpsess987654/frontend/jupiter/softaculous/index.live.php");
 });

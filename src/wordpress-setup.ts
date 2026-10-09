@@ -24,22 +24,36 @@ export class SoftaculousClient {
     try {
       const data = await new WhmClient(this.config).createCpanelSession(this.config.CPANEL_USERNAME);
       const url = new URL(data.url);
-      const token = data.cp_security_token;
+      let token = data.cp_security_token;
       if (url.origin !== origin || url.username || url.password) throw new Error("WHM session activation: login URL did not match the configured HTTPS cPanel origin.");
       if (!/^\/cpsess[0-9]+$/.test(token) || !url.pathname.startsWith(`${token}/login`)) throw new Error("WHM session activation: session token or login path format was not recognized.");
-      const response = await fetch(url, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(this.config.WHM_TIMEOUT_MS) });
-      if (response.status !== 200 && response.status !== 302 && response.status !== 303) throw new Error(`WHM session activation: cPanel login returned HTTP ${response.status}.`);
-      const location = response.headers.get("location");
-      if (location) {
-        const target = new URL(location, url);
-        if (target.origin !== origin || target.username || target.password || !target.pathname.startsWith(`${token}/`)) throw new Error("WHM session activation: login redirected outside the expected cPanel session path.");
+      let current = url;
+      const cookies = new Map<string, string>();
+      for (let hop = 0; hop < 5; hop++) {
+        const response = await fetch(current, { method: "GET", redirect: "manual",
+          headers: cookies.size ? { Cookie: [...cookies.values()].join("; ") } : {}, signal: AbortSignal.timeout(this.config.WHM_TIMEOUT_MS) });
+        if (response.status !== 200 && ![302, 303, 307, 308].includes(response.status)) throw new Error(`WHM session activation: cPanel login returned HTTP ${response.status}.`);
+        for (const value of response.headers.getSetCookie()) {
+          const pair = value.split(";", 1)[0];
+          if (/^[A-Za-z0-9_-]+=[^\r\n;]+$/.test(pair)) cookies.set(pair.slice(0, pair.indexOf("=")), pair);
+        }
+        const location = response.headers.get("location");
+        if (response.status !== 200) {
+          if (!location) throw new Error("WHM session activation: cPanel login redirect had no destination.");
+          const target = new URL(location, current);
+          const match = target.pathname.match(/^(\/cpsess[0-9]+)\//);
+          if (target.origin !== origin || target.username || target.password || !match) throw new Error("WHM session activation: login redirected outside the expected cPanel session path.");
+          token = match[1];
+          current = target;
+          continue;
+        }
+        // Cookies stay in this request's instance and are sent only to the
+        // validated HTTPS cPanel origin, never to WHM or an external redirect.
+        if (![...cookies.keys()].some(name => /session$/i.test(name))) throw new Error("WHM session activation: cPanel did not return a usable session cookie.");
+        this.session = { token, cookie: [...cookies.values()].join("; ") };
+        return this.session;
       }
-      // Keep this short-lived cookie only in this request's client instance.
-      // It is sent solely to the validated HTTPS cPanel origin, never to WHM.
-      const cookies = response.headers.getSetCookie().map(value => value.split(";", 1)[0]).filter(value => /^[A-Za-z0-9_-]+=[^\r\n;]+$/.test(value));
-      if (!cookies.some(value => /session=/i.test(value))) throw new Error("WHM session activation: cPanel did not return a usable session cookie.");
-      this.session = { token, cookie: cookies.join("; ") };
-      return this.session;
+      throw new Error("WHM session activation: cPanel login exceeded the safe redirect limit.");
     } catch (error) {
       if (error instanceof Error && (error.message.startsWith("WHM reseller session creation failed") || error.message.startsWith("WHM session activation:"))) throw error;
       throw new Error("WHM reseller session could not be activated securely. No Softaculous request was made; no hosting changes were made.");
