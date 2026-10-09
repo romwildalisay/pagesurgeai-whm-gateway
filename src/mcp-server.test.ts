@@ -28,21 +28,39 @@ async function connectedClient() {
   return { client, server };
 }
 
-describe("PageSurgeAI WHM Gateway v0.2.2", () => {
-  it("advertises exactly four read-only tools", async () => {
+describe("PageSurgeAI WHM Gateway v0.3.0", () => {
+  it("denies creation at the MCP boundary without verified creation access", async () => {
+    const write = vi.spyOn(WhmClient.prototype, "createAccount");
+    const read = vi.spyOn(WhmClient.prototype, "call");
+    const { client, server } = await connectedClient();
+    const response = await client.callTool({ name: "hosting_create_account", arguments: {
+      domain: "lab.example.com", username: "labsite", package: "owner_lab", contact_email: "owner@example.com", confirm: true
+    } });
+    expect(response.isError).toBe(true);
+    expect(JSON.stringify(response)).toContain("whm:create");
+    expect(write).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
+    await client.close();
+    await server.close();
+  });
+  it("advertises four read-only tools and one scoped creation tool", async () => {
     const { client, server } = await connectedClient();
     const response = await client.listTools();
     expect(response.tools.map((t) => t.name).sort()).toEqual([
+      "hosting_create_account",
       "hosting_get_account",
       "hosting_get_usage",
       "hosting_list_accounts",
       "hosting_list_packages"
     ]);
-    for (const tool of response.tools) {
+    for (const tool of response.tools.filter((t) => t.name !== "hosting_create_account")) {
       expect(tool.annotations?.readOnlyHint).toBe(true);
       expect(tool.annotations?.destructiveHint).toBe(false);
       expect(tool._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["whm:read"] }]);
     }
+    const creation = response.tools.find((t) => t.name === "hosting_create_account")!;
+    expect(creation.annotations?.readOnlyHint).toBe(false);
+    expect(creation._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["whm:read", "whm:create"] }]);
     await client.close();
     await server.close();
   });

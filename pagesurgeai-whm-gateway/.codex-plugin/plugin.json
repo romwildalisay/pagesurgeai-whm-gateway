@@ -14,14 +14,13 @@
       "Check resource usage for a hosting account."
     ]
   },
+  "apps": "./.app.json",
   "name": "pagesurgeai-whm-gateway",
-  "version": "0.2.2",
-  "description": "Inspect PageSurgeAI WHM hosting accounts, packages, and usage through four read-only tools.",
+  "version": "0.3.0",
+  "description": "Inspect PageSurgeAI WHM hosting and create accounts with explicitly granted creation permission.",
   "author": {
     "name": "PageSurgeAI"
   },
   "keywords": [],
-  "skills": "./skills",
-  "mcpServers": "./.mcp.json"
+  "skills": "./skills"
 }
-

@@ -1,70 +1,52 @@
-# PageSurgeAI WHM Gateway v0.2.2
+# PageSurgeAI WHM Gateway v0.3.0
 
-A standalone, read-only MCP gateway for a cPanel/WHM reseller account, with OAuth 2.1-compatible discovery for ChatGPT.
+A Node.js MCP gateway for a cPanel/WHM reseller, with Auth0 authentication, four read-only tools, and one separately authorized account-creation tool.
 
-## Included tools
+## Tools and permissions
 
-- `hosting_list_accounts`
-- `hosting_get_account`
-- `hosting_list_packages`
-- `hosting_get_usage`
+| Tool | OAuth scopes | WHM operation |
+| --- | --- | --- |
+| `hosting_list_accounts` | `whm:read` | `listaccts` |
+| `hosting_get_account` | `whm:read` | `accountsummary` |
+| `hosting_list_packages` | `whm:read` | `listpkgs` |
+| `hosting_get_usage` | `whm:read` | `accountsummary` |
+| `hosting_create_account` | `whm:read whm:create` | `createacct` |
 
-No tool can create, change, suspend, restore, or delete hosting resources. There is no arbitrary WHM proxy, shell access, or WP-CLI execution.
+Creation requires domain, lowercase cPanel username, an exact existing package, contact email, and `confirm: true`. The gateway validates inventory and packages before writing. An existing matching username/domain/package returns `already_exists` without changes; conflicting accounts are rejected. WHM applies server limits and username rules, including any database prefix restrictions.
 
-## What v0.2.2 fixes
+Creation uses a POST form body. A random password is generated privately; neither it nor raw account-creation output is returned to the client. Shell and reseller access are disabled, existing DNS zones are not overwritten, and package quotas are inherited. Access the resulting cPanel account through WHM or reset its password there. No arbitrary WHM proxy, account modification, deletion, or WordPress installation is provided.
 
-The existing OAuth/read-only behavior remains. The v0.2.2 rebuild adds:
+## Enable creation on the working connection
 
-- a fresh-start guide for deleted Auth0 clients;
-- distinct WHM 401/403 remediation messages;
-- explicit process-only health reporting;
-- the path-specific protected-resource metadata route;
-- standard OAuth challenge error values;
-- HTTP authentication-boundary regression tests.
+1. Keep the current Auth0 tenant, application, callback, audience, and PageSurgeAI WHM Web connection.
+2. Add `whm:create` to the protected Auth0 API's permissions alongside `whm:read`. Ensure the authorized user's access token receives both scopes; requesting a scope does not itself grant it. If RBAC is enabled, assign the permission to the appropriate user or role.
+3. Enable Create Accounts (`create-acct`) for the existing backend WHM API token and its reseller owner. Retain read permissions and existing IP restrictions. Do not grant root or unrelated permissions.
+4. Update the existing Web connection's requested scopes to include both permissions, reauthorize as needed, and refresh its discovered tools. The package preserves the registered Web App binding.
+5. Request a specific account, then verify it with account inventory. WordPress installation is a later extension.
 
-Preserved protections:
+Read-only tokens continue to work for read operations. Creation fails with HTTP 403 and an insufficient-scope challenge unless both OAuth scopes are verified. All MCP HTTP requests remain protected by the existing OAuth boundary.
 
-- allows MCP initialization and tool discovery without exposing WHM data;
-- publishes protected-resource metadata;
-- advertises the `whm:read` OAuth scope;
-- returns a standard MCP OAuth challenge when an unauthenticated tool is called;
-- verifies issuer, audience, signature, expiration, and scope on every tool call.
-- publishes Auth0's exact issuer identifier, including its required trailing slash.
+## Uncertain creation results
 
-## Security boundary
+There are no automatic write retries. Account creation can exceed the configured request timeout or the client's tool deadline. A timeout, lost connection, or unrecognized response may follow a successful WHM operation. Inspect WHM inventory before retrying; do not assume the account was not created. This is an existing-account check, not a durable background-job system or a guarantee of exactly-once execution.
 
-ChatGPT authenticates through an OAuth 2.1 identity provider. The gateway validates the access token and separately authenticates to WHM using `WHM_API_TOKEN`. The WHM token remains only in Render.
+## Configuration
 
-Use an established identity provider such as Auth0. Do not implement your own password or token issuer for production.
-
-## Environment variables
+The WHM token belongs only in Render's environment. Never place credentials in repository files, plugin instructions, or chat.
 
 | Variable | Purpose |
 | --- | --- |
 | `WHM_BASE_URL` | WHM HTTPS endpoint, normally ending in `:2087` |
 | `WHM_USERNAME` | Restricted reseller username |
 | `WHM_API_TOKEN` | Restricted WHM API token |
-| `PUBLIC_BASE_URL` | Render service origin without a trailing slash |
-| `OAUTH_ISSUER` | OAuth issuer origin without a trailing slash |
-| `OAUTH_AUDIENCE` | API audience; use the full public `/mcp` URL |
-| `OAUTH_SCOPE` | Required scope; default `whm:read` |
-| `WHM_TIMEOUT_MS` | Optional WHM timeout; default `15000` |
+| `PUBLIC_BASE_URL` | Render service origin without trailing slash |
+| `OAUTH_ISSUER` | Auth0 issuer origin without trailing slash |
+| `OAUTH_AUDIENCE` | API audience, the full public `/mcp` URL |
+| `OAUTH_SCOPE` | Base read permission, default `whm:read`; creation also requires `whm:create` |
+| `WHM_TIMEOUT_MS` | WHM request timeout, default `15000` |
 
-## Local verification
+Run `npm ci`, `npm run build`, and `npm test` before deployment. Tests mock WHM writes and do not create hosting resources. `/health` reports version `0.3.0` and process status only; it does not test OAuth or WHM. Protected-resource metadata advertises both scopes.
 
-1. Install Node.js 20 or newer.
-2. Copy `.env.example` to `.env` and fill in non-placeholder values.
-3. Run `npm ci`.
-4. Run `npm run build`.
-5. Run `npm test`.
-6. Run `npm start`.
-7. Confirm `/health` reports version `0.2.2` and `auth: oauth2`.
-8. Confirm `/.well-known/oauth-protected-resource` returns the configured issuer and `whm:read` scope.
+For deployment, see `BEGINNER-DEPLOYMENT.md`. Use `FRESH-START.md` only when recovering a deleted Auth0 client; enabling creation does not require deleting or recreating a working application.
 
-## Deployment and ChatGPT
-
-Follow `BEGINNER-DEPLOYMENT.md` for deployment. If you deleted Auth0 applications, use [FRESH-START.md](FRESH-START.md) to replace the invalid client registration. An update alone does not recreate deleted OAuth clients.
-
-## Release gate
-
-Do not add write-capable WHM functions until the read-only gateway has completed repeated isolated testing, token revocation testing, and audit-log review.
+Reference: [WHM createacct](https://api.docs.cpanel.net/specifications/whm.openapi/account-creation/accounts-createacct) and [WHM ACL chart](https://api.docs.cpanel.net/guides/guide-to-whm-plugins/guide-to-whm-plugins-acl-reference-chart).

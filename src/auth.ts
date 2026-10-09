@@ -8,7 +8,7 @@ export type AuthCheck =
 export function createTokenVerifier(config: Config) {
   const jwks = createRemoteJWKSet(new URL(`${config.OAUTH_ISSUER}/.well-known/jwks.json`));
 
-  return async function verifyAuthorization(value: string | undefined): Promise<AuthCheck> {
+  return async function verifyAuthorization(value: string | undefined, requiredScopes: string[] = [config.OAUTH_SCOPE]): Promise<AuthCheck> {
     if (!value?.startsWith("Bearer ")) return { ok: false, reason: "missing_token" };
 
     try {
@@ -19,7 +19,7 @@ export function createTokenVerifier(config: Config) {
         algorithms: ["RS256"]
       });
       const scopes = typeof payload.scope === "string" ? payload.scope.split(/\s+/) : [];
-      if (!scopes.includes(config.OAUTH_SCOPE)) return { ok: false, reason: "insufficient_scope" };
+      if (!requiredScopes.every((scope) => scopes.includes(scope))) return { ok: false, reason: "insufficient_scope" };
       return { ok: true, subject: String(payload.sub ?? "") };
     } catch {
       return { ok: false, reason: "invalid_token" };

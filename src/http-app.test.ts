@@ -26,6 +26,36 @@ async function endpoint(verifier?: Parameters<typeof createGatewayApp>[1]) {
 }
 
 describe("HTTP OAuth boundary", () => {
+  it("allows an authorized creation request through HTTP and returns only safe fields", async () => {
+    const read = vi.spyOn(WhmClient.prototype, "call").mockResolvedValueOnce({ data: { acct: [] } }).mockResolvedValueOnce({ data: { pkg: [{ name: "owner_lab" }] } });
+    const write = vi.spyOn(WhmClient.prototype, "createAccount").mockResolvedValue({ metadata: { result: 1, output: { raw: "sensitive-secret" } } });
+    const verify = vi.fn(async () => ({ ok: true as const, subject: "authorized-user" }));
+    const base = await endpoint(verify);
+    const response = await fetch(base + "/mcp", { method: "POST", headers: {
+      authorization: "Bearer authorized-token", "content-type": "application/json", accept: "application/json, text/event-stream"
+    }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: {
+      name: "hosting_create_account", arguments: { domain: "lab.example.com", username: "labsite", package: "owner_lab", contact_email: "owner@example.com", confirm: true }
+    } }) });
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain('"status":"created"');
+    expect(body).not.toContain("sensitive-secret");
+    expect(body).not.toContain(write.mock.calls[0][0].password);
+    expect(verify).toHaveBeenCalledWith("Bearer authorized-token", ["whm:read", "whm:create"]);
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+  it("requires both scopes before a creation call can reach WHM", async () => {
+    const whm = vi.spyOn(WhmClient.prototype, "createAccount");
+    const verify = vi.fn(async (_value: string | undefined, _scopes?: string[]) => ({ ok: false as const, reason: "insufficient_scope" as const }));
+    const base = await endpoint(verify);
+    const response = await fetch(base + "/mcp", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "hosting_create_account", arguments: {} } }) });
+    expect(verify).toHaveBeenCalledWith(undefined, ["whm:read", "whm:create"]);
+    expect(response.status).toBe(403);
+    expect(response.headers.get("www-authenticate")).toContain('scope="whm:read whm:create"');
+    expect(whm).not.toHaveBeenCalled();
+  });
   it.each(["GET", "POST"])("challenges unauthenticated %s connection probes", async (method) => {
     const base = await endpoint(async () => ({ ok: false, reason: "missing_token" }));
     const response = await fetch(base + "/mcp", { method,
@@ -45,7 +75,7 @@ describe("HTTP OAuth boundary", () => {
         params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } } }) });
     expect(response.status).toBe(200);
     expect(await response.text()).toContain('serverInfo');
-    expect(verify).toHaveBeenCalledWith("Bearer test-token");
+    expect(verify).toHaveBeenCalledWith("Bearer test-token", ["whm:read"]);
     expect(whm).not.toHaveBeenCalled();
   });
   it("serves both metadata locations with Auth0's canonical issuer", async () => {
@@ -54,7 +84,7 @@ describe("HTTP OAuth boundary", () => {
       const response = await fetch(base + path);
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ resource: config.OAUTH_AUDIENCE,
-        authorization_servers: ["https://tenant.example.test/"], scopes_supported: ["whm:read"] });
+        authorization_servers: ["https://tenant.example.test/"], scopes_supported: ["whm:read", "whm:create"] });
     }
   });
   it("does not confuse process health with completed OAuth or WHM checks", async () => {

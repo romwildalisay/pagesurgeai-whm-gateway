@@ -10,3 +10,7 @@ Remove or replace the ChatGPT connection that references the deleted client. Ret
 
 Consult current official OpenAI/Auth0 documentation before giving detailed UI instructions. Do not claim the OAuth flow is tested until authentication succeeds, or WHM is tested until a read-only request succeeds.
 
+
+## Enable account creation on a working connection
+
+Preserve the existing Auth0 application, callback, issuer, audience, and Web App binding. Add the API permission `whm:create` alongside `whm:read`. Ensure the user's token is issued with both scopes; requesting a scope alone does not prove it was granted. Update the existing Web connection's requested scopes and reauthorize when needed, then refresh its discovered tools. Enable Create Accounts (`create-acct`) for the WHM API token and its reseller owner; retain existing read permissions. Do not grant root or unrelated account deletion privileges. Verify creation only after a successful `hosting_create_account` result and account inventory check.

@@ -14,19 +14,29 @@ export class WhmClient {
     const allowedReadFunctions = new Set(["listaccts", "accountsummary", "listpkgs"]);
     if (!allowedReadFunctions.has(functionName)) throw new WhmError("WHM function is not allowed in read-only mode");
     if (!/^[a-z][a-z0-9_]*$/i.test(functionName)) throw new WhmError("Invalid WHM function name");
+    return this.request(functionName, params, false);
+  }
+
+  async createAccount(params: { username: string; domain: string; plan: string; contactemail: string; password: string }) {
+    return this.request("createacct", { ...params, hasshell: 0, reseller: 0, forcedns: 0, savepkg: 0, showpass: "n" }, true);
+  }
+
+  private async request(functionName: string, params: Record<string, string | number>, creating: boolean): Promise<any> {
     const url = new URL(`/json-api/${functionName}`, this.config.WHM_BASE_URL);
     url.searchParams.set("api.version", "1");
-    for (const [key, value] of Object.entries(params)) url.searchParams.set(key, String(value));
+    if (!creating) for (const [key, value] of Object.entries(params)) url.searchParams.set(key, String(value));
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.WHM_TIMEOUT_MS);
     try {
       const response = await fetch(url, {
-        method: "GET",
+        method: creating ? "POST" : "GET",
+        redirect: "error",
+        ...(creating ? { body: new URLSearchParams(Object.entries(params).map(([key, value]) => [key, String(value)])) } : {}),
         headers: {
           Authorization: `whm ${this.config.WHM_USERNAME}:${this.config.WHM_API_TOKEN}`,
           Accept: "application/json",
-          "User-Agent": "PageSurgeAI-WHM-Gateway/0.2.2"
+          "User-Agent": "PageSurgeAI-WHM-Gateway/0.3.0"
         },
         signal: controller.signal
       });
@@ -36,17 +46,18 @@ export class WhmClient {
           response.status
         );
       }
-      if (!response.ok) throw new WhmError(`WHM returned HTTP ${response.status}`, response.status);
+      if (!response.ok) throw new WhmError(creating ? `Account creation returned HTTP ${response.status}; check WHM inventory before retrying.` : `WHM returned HTTP ${response.status}`, response.status);
       const body = await response.json() as any;
       const metadata = body?.metadata;
       if (metadata && (metadata.result === 0 || metadata.result === false)) {
-        throw new WhmError(String(metadata.reason || "WHM rejected the request"));
+        throw new WhmError(creating ? "WHM rejected account creation. Check Create Accounts permission, package, account limits, and domain availability in WHM." : String(metadata.reason || "WHM rejected the request"));
       }
+      if (creating && metadata?.result !== 1 && metadata?.result !== true) throw new WhmError("Account creation returned an unrecognized response. Check WHM inventory before retrying.");
       return body;
     } catch (error) {
       if (error instanceof WhmError) throw error;
-      if (error instanceof Error && error.name === "AbortError") throw new WhmError("WHM request timed out");
-      throw new WhmError("Unable to reach WHM securely");
+      if (error instanceof Error && error.name === "AbortError") throw new WhmError(creating ? "Account creation timed out; it may have completed. Check WHM inventory before retrying." : "WHM request timed out");
+      throw new WhmError(creating ? "Account creation could not be confirmed; it may have completed. Check WHM inventory before retrying." : "Unable to reach WHM securely");
     } finally {
       clearTimeout(timeout);
     }

@@ -1,3 +1,4 @@
+import { createHostingAccount, creationInput, CREATE_SCOPE } from "./account-creation.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Config } from "./config.js";
@@ -26,12 +27,12 @@ function accountView(a: any) {
   };
 }
 
-export function createMcpServer(config: Config): McpServer {
+export function createMcpServer(config: Config, access: { canCreate: boolean } = { canCreate: false }): McpServer {
   const whm = new WhmClient(config);
   const securitySchemes = [{ type: "oauth2" as const, scopes: [config.OAUTH_SCOPE] }];
   const server = new McpServer(
-    { name: "pagesurgeai-whm-gateway", version: "0.2.2" },
-    { instructions: "Read-only access to the configured PageSurgeAI WHM reseller account. Never imply that these tools can create, modify, suspend, restore, or delete hosting resources." }
+    { name: "pagesurgeai-whm-gateway", version: "0.3.0" },
+    { instructions: "Inspect the configured WHM reseller account and create accounts only when explicitly requested with the required creation permission. No account modification, suspension, restoration, deletion, or WordPress installation is implemented." }
   );
 
   server.registerTool("hosting_list_accounts", {
@@ -89,6 +90,18 @@ export function createMcpServer(config: Config): McpServer {
       bandwidth_limit: a.bwlimit ?? null
     } : null;
     return result({ usage }, usage ? `Retrieved usage for ${user}.` : `No hosting account was found for ${user}.`);
+  });
+
+  server.registerTool("hosting_create_account", {
+    title: "Create hosting account",
+    description: "Create one cPanel account after the user specifies domain, username, package, and contact email. Requires whm:read and whm:create plus WHM Create Accounts permission. Set confirm=true only for an explicit creation request. Checks existing accounts first; never overwrites them. Password is generated on the server and never returned; use WHM to access the new cPanel account. If creation times out, inspect inventory before retrying. Does not install WordPress.",
+    inputSchema: creationInput,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    _meta: { securitySchemes: [{ type: "oauth2", scopes: [config.OAUTH_SCOPE, CREATE_SCOPE] }] }
+  }, async (input) => {
+    if (!access.canCreate) throw new Error("Account creation requires the whm:create permission. Reauthorize the existing Web connection with that scope.");
+    const created = await createHostingAccount(whm, input);
+    return result(created, created.status === "already_exists" ? `Matching hosting account ${input.username} already exists; no changes made.` : `Created hosting account ${input.username} for ${input.domain}. WordPress is not installed yet. Access cPanel through WHM; no password is exposed in chat.`);
   });
 
   return server;
