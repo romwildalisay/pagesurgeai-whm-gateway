@@ -47,7 +47,7 @@ it("verifies HTTPS and posts only WordPress install fields without enabling over
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 200 }));
   const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValueOnce({ installations: {} }).mockResolvedValueOnce({ done: true }).mockResolvedValueOnce({ done: true, __settings: { admin_pass: "raw-secret" } });
   const result = await installWordpress(config, input);
-  const fields = api.mock.calls[2][1]!;
+  const fields = api.mock.calls[2][1]! as URLSearchParams;
   expect(fields.get("softproto")).toBe("3");
   expect(fields.get("softdirectory")).toBe("");
   expect(fields.has("overwrite_existing")).toBe(false);

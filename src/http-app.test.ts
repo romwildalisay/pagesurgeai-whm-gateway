@@ -26,7 +26,7 @@ async function endpoint(verifier?: Parameters<typeof createGatewayApp>[1]) {
 }
 
 describe("HTTP OAuth boundary", () => {
-  it.each(["hosting_install_wordpress", "hosting_configure_wordpress_email"])("requires WordPress permission for %s", async (toolName) => {
+  it.each(["hosting_install_wordpress", "hosting_configure_wordpress_email", "hosting_setup_wordpress_mcp", "hosting_wordpress_write"])("requires WordPress permission for %s", async (toolName) => {
     const fetchSpy = vi.spyOn(WhmClient.prototype, "call");
     const verify = vi.fn(async () => ({ ok: false as const, reason: "insufficient_scope" as const }));
     const base = await endpoint(verify);

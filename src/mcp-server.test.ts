@@ -29,11 +29,11 @@ async function connectedClient() {
 }
 
 describe("PageSurgeAI WHM Gateway v0.4.0", () => {
-  it.each(["hosting_install_wordpress", "hosting_configure_wordpress_email"])("denies %s without verified WordPress access", async toolName => {
+  it.each(["hosting_install_wordpress", "hosting_configure_wordpress_email", "hosting_setup_wordpress_mcp", "hosting_wordpress_write"])("denies %s without verified WordPress access", async toolName => {
     const read = vi.spyOn(WhmClient.prototype, "call");
     const { client, server } = await connectedClient();
     const response = await client.callTool({ name: toolName, arguments: {
-      username: "labsite", domain: "lab.example.com", site_title: "Lab", admin_email: "owner@example.com", confirm: true
+      username: "labsite", domain: "lab.example.com", site_title: "Lab", admin_email: "owner@example.com", tool: "content_create", parameters: {}, confirm: true
     } });
     expect(response.isError).toBe(true);
     expect(JSON.stringify(response)).toContain("whm:wordpress");
@@ -67,9 +67,12 @@ describe("PageSurgeAI WHM Gateway v0.4.0", () => {
       "hosting_get_wordpress_status",
       "hosting_install_wordpress",
       "hosting_list_accounts",
-      "hosting_list_packages"
+      "hosting_list_packages",
+      "hosting_setup_wordpress_mcp",
+      "hosting_wordpress_read",
+      "hosting_wordpress_write"
     ]);
-    for (const tool of response.tools.filter((t) => !["hosting_create_account", "hosting_install_wordpress", "hosting_configure_wordpress_email"].includes(t.name))) {
+    for (const tool of response.tools.filter((t) => !["hosting_create_account", "hosting_install_wordpress", "hosting_configure_wordpress_email", "hosting_setup_wordpress_mcp", "hosting_wordpress_write"].includes(t.name))) {
       expect(tool.annotations?.readOnlyHint).toBe(true);
       expect(tool.annotations?.destructiveHint).toBe(false);
       expect(tool._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["whm:read"] }]);

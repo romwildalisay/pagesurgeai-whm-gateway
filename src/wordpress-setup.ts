@@ -78,14 +78,15 @@ export class SoftaculousClient {
       return "The read-only UAPI response did not confirm successful authentication.";
     } catch { return "The read-only UAPI authentication check could not be completed securely."; }
   }
-  async request(action: "installations" | "software" | "email", params?: URLSearchParams): Promise<any> {
+  async request(action: "installations" | "software" | "email" | "wordpress", params?: URLSearchParams | FormData): Promise<any> {
     const url = new URL(this.config.WHM_BASE_URL);
     url.port = "2083";
     url.pathname = "/frontend/jupiter/softaculous/index.live.php";
     url.username = ""; url.password = ""; url.search = ""; url.hash = "";
     url.searchParams.set("api", "json"); url.searchParams.set("act", action);
     if (action === "software") url.searchParams.set("soft", "26");
-    const writing = action === "software" || (action === "email" && params !== undefined);
+    if (action === "wordpress" && params instanceof FormData) url.searchParams.set("upload", "1");
+    const writing = action === "software" || params !== undefined;
     const passwordMode = this.config.CPANEL_AUTH_MODE === "password";
     let headers: Record<string, string>;
     if (passwordMode) {
@@ -104,12 +105,14 @@ export class SoftaculousClient {
         const diagnostic = writing ? "No installation was confirmed. Check inventory before retrying." : passwordMode ? await this.authenticationDiagnostic(url.origin) : "The WHM session was rejected by the Softaculous endpoint. No installation was started.";
         throw new Error(`cPanel rejected Softaculous authentication with HTTP ${response.status} at ${url.origin} for ${this.config.CPANEL_USERNAME}. ${diagnostic} Reconnecting Auth0 does not fix this upstream rejection.`);
       }
+      if (!response.ok && action === "wordpress") throw new Error("WordPress Manager operation was not confirmed. Inspect installed plugins before retrying.");
       if (!response.ok && action === "email") throw new Error("Softaculous email settings could not be confirmed. No installation was started.");
       if (!response.ok) throw new Error(writing ? "WordPress installation could not be confirmed. Inspect Softaculous before retrying." : "Softaculous inventory is unavailable.");
       const body = await response.json();
       if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Softaculous response was not recognized. Inspect WordPress Manager before retrying.");
       return body;
     } catch (error) {
+      if (action === "wordpress") throw new Error("WordPress Manager operation was not confirmed. Inspect installed plugins before retrying; do not assume the upload failed.");
       if (error instanceof Error && /^(cPanel rejected|WordPress installation could|Softaculous inventory|Softaculous response|Softaculous email)/.test(error.message)) throw error;
       if (action === "email") throw new Error("Softaculous email settings could not be confirmed. Inspect email settings before retrying; no installation was started.");
       throw new Error(writing ? "WordPress installation could not be confirmed; it may have completed. Inspect Softaculous before retrying." : "Cannot read Softaculous securely. Verify HTTPS on the cPanel server and test account credentials.");
@@ -142,11 +145,11 @@ export class SoftaculousClient {
   }
 }
 
-function hasErrors(value: unknown) {
+export function hasErrors(value: unknown) {
   return value != null && value !== false && value !== "" && (typeof value !== "object" || Object.keys(value).length > 0);
 }
 
-async function verifiedAccount(config: Config, username: string) {
+export async function verifiedAccount(config: Config, username: string) {
   if (username !== config.CPANEL_USERNAME) throw new Error("WordPress setup is restricted to the cPanel test account configured in Render.");
   const accounts = extractAccounts(await new WhmClient(config).call("accountsummary", { user: username }));
   const account = accounts.find((a) => a.user === username && a.owner === config.WHM_USERNAME);
