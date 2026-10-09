@@ -1,4 +1,4 @@
-# PageSurgeAI WHM Gateway v0.4.1
+# PageSurgeAI WHM Gateway v0.4.2
 
 A Node.js MCP gateway for a cPanel/WHM reseller, with Auth0 authentication, five read-only tools and separately authorized account-creation and WordPress-installation tools.
 
@@ -45,7 +45,7 @@ The WHM token belongs only in Render's environment. Never place credentials in r
 | `OAUTH_SCOPE` | Base read permission, default `whm:read`; creation also requires `whm:create` |
 | `WHM_TIMEOUT_MS` | WHM request timeout, default `15000` |
 
-Run `npm ci`, `npm run build`, and `npm test` before deployment. Tests mock WHM writes and do not create hosting resources. `/health` reports version `0.4.1` and process status only; it does not test OAuth or WHM. Protected-resource metadata advertises all three scopes.
+Run `npm ci`, `npm run build`, and `npm test` before deployment. Tests mock WHM writes and do not create hosting resources. `/health` reports version `0.4.2` and process status only; it does not test OAuth or WHM. Protected-resource metadata advertises all three scopes.
 
 For deployment, see `BEGINNER-DEPLOYMENT.md`. Use `FRESH-START.md` only when recovering a deleted Auth0 client; enabling creation does not require deleting or recreating a working application.
 
@@ -53,14 +53,15 @@ Reference: [WHM createacct](https://api.docs.cpanel.net/specifications/whm.opena
 
 ## WordPress setup with Softaculous (test account only)
 
-The adapter uses Softaculous API script 26 at the Jupiter endpoint on the WHM hostname's cPanel HTTPS port 2083. The WHM token cannot substitute for cPanel end-user authentication here. No root or create-user-session privilege is requested.
+The adapter uses Softaculous API script 26 at the Jupiter endpoint on the WHM hostname's cPanel HTTPS port 2083. By default, the existing WHM reseller token creates a temporary cPanel session for the configured owned test account via `create_user_session`. The session login cookie is kept only in memory and restricted to the HTTPS cPanel origin. Root access is never requested. If the existing token lacks permission, the gateway fails without changing privileges.
 
 Set these private Render environment variables:
 
 | Variable | Test value |
 | --- | --- |
 | `CPANEL_USERNAME` | `authoritysurgeai` |
-| `CPANEL_PASSWORD` | This account's cPanel login password; enter only in Render |
+| `CPANEL_AUTH_MODE` | Optional; defaults to `whm-session`. Set `password` only to use the original password adapter |
+| `CPANEL_PASSWORD` | Optional; required only in password mode; enter only in Render |
 
 The optional variables do not affect existing WHM tools when unset. If you do not know the password, reset only this test account's password through WHM and then enter it securely in Render. Keep WHM and Auth0 credentials unchanged.
 
@@ -74,4 +75,4 @@ No automatic retries or durable background jobs are provided. A slow installatio
 
 Reference: https://www.softaculous.com/docs/api/api/
 
-On a Softaculous inventory HTTP 401/403, the gateway now runs one read-only UAPI authentication probe with the same credentials. It reports only the HTTP outcome and whether UAPI succeeded, distinguishing general cPanel API rejection from a Softaculous-specific restriction. No raw response or credentials are returned. This probe is never run after an installation write.
+In password mode, on a Softaculous inventory HTTP 401/403, the gateway now runs one read-only UAPI authentication probe with the same credentials. It reports only the HTTP outcome and whether UAPI succeeded, distinguishing general cPanel API rejection from a Softaculous-specific restriction. No raw response or credentials are returned. This probe is never run after an installation write.

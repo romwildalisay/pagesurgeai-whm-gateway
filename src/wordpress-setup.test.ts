@@ -3,7 +3,7 @@ import { installWordpress, SoftaculousClient, wordpressStatus } from "./wordpres
 import { WhmClient } from "./whm-client.js";
 import type { Config } from "./config.js";
 
-const config: Config = { WHM_BASE_URL: "https://whm.example.test:2087", WHM_USERNAME: "reseller", WHM_API_TOKEN: "a".repeat(32), PUBLIC_BASE_URL: "https://gateway.test", OAUTH_ISSUER: "https://auth.test", OAUTH_AUDIENCE: "https://gateway.test/mcp", OAUTH_SCOPE: "whm:read", PORT: 3000, WHM_TIMEOUT_MS: 15000, CPANEL_USERNAME: "labsite", CPANEL_PASSWORD: "cpanel-private-secret" };
+const config: Config = { WHM_BASE_URL: "https://whm.example.test:2087", WHM_USERNAME: "reseller", WHM_API_TOKEN: "a".repeat(32), PUBLIC_BASE_URL: "https://gateway.test", OAUTH_ISSUER: "https://auth.test", OAUTH_AUDIENCE: "https://gateway.test/mcp", OAUTH_SCOPE: "whm:read", PORT: 3000, WHM_TIMEOUT_MS: 15000, CPANEL_USERNAME: "labsite", CPANEL_AUTH_MODE: "password", CPANEL_PASSWORD: "cpanel-private-secret" };
 const input = { username: "labsite", domain: "lab.example.com", site_title: "Lab", admin_email: "owner@example.com", confirm: true as const };
 function account() { return vi.spyOn(WhmClient.prototype, "call").mockResolvedValue({ data: { acct: [{ user: "labsite", owner: "reseller", domain: input.domain, suspended: 0 }] } }); }
 afterEach(() => vi.restoreAllMocks());
@@ -111,4 +111,51 @@ it("never performs authentication diagnostics or retries following a rejected wr
   const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("denied", { status: 403 }));
   await expect(new SoftaculousClient(config).request("software", new URLSearchParams())).rejects.toThrow("No installation was confirmed");
   expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+const sessionConfig: Config = { ...config, CPANEL_AUTH_MODE: undefined, CPANEL_PASSWORD: undefined };
+function sessionData(url = "https://whm.example.test:2083/cpsess123456/login/?session=private-login-secret") {
+  return { url, cp_security_token: "/cpsess123456" };
+}
+it("uses the existing WHM token for a temporary test-account session without cPanel passwords", async () => {
+  const session = vi.spyOn(WhmClient.prototype, "createCpanelSession").mockResolvedValue(sessionData());
+  const fetch = vi.spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce(new Response("", { status: 302, headers: { "set-cookie": "cpsession=private-cookie; Secure; HttpOnly; Path=/", location: "/cpsess123456/frontend/jupiter/index.html" } }))
+    .mockImplementation(async () => new Response(JSON.stringify({ iscripts: {} })));
+  const client = new SoftaculousClient(sessionConfig);
+  await client.installations();
+  await client.installations();
+  expect(session).toHaveBeenCalledOnce();
+  expect(session).toHaveBeenCalledWith("labsite");
+  expect(String(fetch.mock.calls[1][0])).toBe("https://whm.example.test:2083/cpsess123456/frontend/jupiter/softaculous/index.live.php?api=json&act=installations");
+  expect(fetch.mock.calls[0][1]?.redirect).toBe("manual");
+  expect(fetch.mock.calls[1][1]?.headers).toEqual({ Cookie: "cpsession=private-cookie", Accept: "application/json" });
+});
+it.each(["https://attacker.test:2083/cpsess123456/login/?session=secret", "http://whm.example.test:2083/cpsess123456/login/?session=secret", "https://whm.example.test:2083/untrusted?session=secret"])("rejects unsafe session URLs before sending session secrets", async url => {
+  vi.spyOn(WhmClient.prototype, "createCpanelSession").mockResolvedValue(sessionData(url));
+  const fetch = vi.spyOn(globalThis, "fetch");
+  await expect(new SoftaculousClient(sessionConfig).installations()).rejects.toThrow("activated securely");
+  expect(fetch).not.toHaveBeenCalled();
+});
+it("does not follow a session login redirect to another host or expose secrets", async () => {
+  vi.spyOn(WhmClient.prototype, "createCpanelSession").mockResolvedValue(sessionData());
+  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 302, headers: { "set-cookie": "cpsession=private-cookie", location: "https://attacker.test/?private-secret" } }));
+  await expect(new SoftaculousClient(sessionConfig).installations()).rejects.toThrow("activated securely");
+  expect(fetch).toHaveBeenCalledOnce();
+});
+it("does not make Softaculous calls when the existing WHM token cannot create a session", async () => {
+  vi.spyOn(WhmClient.prototype, "createCpanelSession").mockRejectedValue(new Error("WHM reseller session creation failed. Existing token rejected."));
+  const fetch = vi.spyOn(globalThis, "fetch");
+  await expect(new SoftaculousClient(sessionConfig).installations()).rejects.toThrow("session creation failed");
+  expect(fetch).not.toHaveBeenCalled();
+});
+it("WHM session creation stays restricted and sends only the WHM token to WHM", async () => {
+  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ metadata: { result: 1 }, data: sessionData() })));
+  const client = new WhmClient(sessionConfig);
+  await expect(client.createCpanelSession("otheruser")).rejects.toThrow("restricted");
+  expect(fetch).not.toHaveBeenCalled();
+  await client.createCpanelSession("labsite");
+  expect(String(fetch.mock.calls[0][0])).toContain("/json-api/create_user_session?");
+  expect((fetch.mock.calls[0][1]?.headers as any).Authorization).toBe(`whm reseller:${config.WHM_API_TOKEN}`);
+  expect(String(fetch.mock.calls[0][0])).toContain("user=labsite");
 });

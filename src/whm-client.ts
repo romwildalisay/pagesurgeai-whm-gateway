@@ -17,6 +17,17 @@ export class WhmClient {
     return this.request(functionName, params, false);
   }
 
+  async createCpanelSession(username: string) {
+    if (!this.config.CPANEL_USERNAME || username !== this.config.CPANEL_USERNAME) throw new WhmError("WHM session access is restricted to the configured test account.");
+    try {
+      const body = await this.request("create_user_session", { user: username, service: "cpaneld", preferred_domain: new URL(this.config.WHM_BASE_URL).hostname }, false);
+      if (body?.metadata?.result !== 1 || !body?.data?.url || !body?.data?.cp_security_token) throw new Error("Invalid session response");
+      return body.data as { url: string; cp_security_token: string };
+    } catch {
+      throw new WhmError("WHM reseller session creation failed. The existing WHM token or reseller may not permit this operation. No Softaculous request was made; no hosting changes were made.");
+    }
+  }
+
   async createAccount(params: { username: string; domain: string; plan: string; contactemail: string; password: string }) {
     return this.request("createacct", { ...params, hasshell: 0, reseller: 0, forcedns: 0, savepkg: 0, showpass: "n" }, true);
   }
@@ -36,7 +47,7 @@ export class WhmClient {
         headers: {
           Authorization: `whm ${this.config.WHM_USERNAME}:${this.config.WHM_API_TOKEN}`,
           Accept: "application/json",
-          "User-Agent": "PageSurgeAI-WHM-Gateway/0.4.1"
+          "User-Agent": "PageSurgeAI-WHM-Gateway/0.4.2"
         },
         signal: controller.signal
       });

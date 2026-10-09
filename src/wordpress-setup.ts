@@ -17,6 +17,33 @@ type Installation = { id: string; url: string };
 
 export class SoftaculousClient {
   constructor(private readonly config: Config) {}
+  private session?: { token: string; cookie: string };
+  private async whmSession(origin: string) {
+    if (this.session) return this.session;
+    if (!this.config.CPANEL_USERNAME) throw new Error("WordPress setup is not configured. Set CPANEL_USERNAME to the test account; no cPanel password is required for WHM session authentication.");
+    try {
+      const data = await new WhmClient(this.config).createCpanelSession(this.config.CPANEL_USERNAME);
+      const url = new URL(data.url);
+      const token = data.cp_security_token;
+      if (url.origin !== origin || url.username || url.password || !/^\/cpsess[0-9]+$/.test(token) || !url.pathname.startsWith(`${token}/login`)) throw new Error("Untrusted session URL");
+      const response = await fetch(url, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(this.config.WHM_TIMEOUT_MS) });
+      if (response.status !== 200 && response.status !== 302 && response.status !== 303) throw new Error("Session login rejected");
+      const location = response.headers.get("location");
+      if (location) {
+        const target = new URL(location, url);
+        if (target.origin !== origin || target.username || target.password || !target.pathname.startsWith(`${token}/`)) throw new Error("Untrusted session redirect");
+      }
+      // Keep this short-lived cookie only in this request's client instance.
+      // It is sent solely to the validated HTTPS cPanel origin, never to WHM.
+      const cookies = response.headers.getSetCookie().map(value => value.split(";", 1)[0]).filter(value => /^[A-Za-z0-9_-]+=[^\r\n;]+$/.test(value));
+      if (!cookies.some(value => /session=/i.test(value))) throw new Error("Session cookie missing");
+      this.session = { token, cookie: cookies.join("; ") };
+      return this.session;
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("WHM reseller session creation failed")) throw error;
+      throw new Error("WHM reseller session could not be activated securely. No Softaculous request was made; no hosting changes were made.");
+    }
+  }
   private credentials() {
     if (!this.config.CPANEL_USERNAME || !this.config.CPANEL_PASSWORD) throw new Error("WordPress setup is not configured. Set CPANEL_USERNAME and CPANEL_PASSWORD privately in Render; never send passwords in chat.");
     return { username: this.config.CPANEL_USERNAME, password: this.config.CPANEL_PASSWORD };
@@ -37,7 +64,6 @@ export class SoftaculousClient {
     } catch { return "The read-only UAPI authentication check could not be completed securely."; }
   }
   async request(action: "installations" | "software", params?: URLSearchParams): Promise<any> {
-    const credentials = this.credentials();
     const url = new URL(this.config.WHM_BASE_URL);
     url.port = "2083";
     url.pathname = "/frontend/jupiter/softaculous/index.live.php";
@@ -45,13 +71,23 @@ export class SoftaculousClient {
     url.searchParams.set("api", "json"); url.searchParams.set("act", action);
     if (action === "software") url.searchParams.set("soft", "26");
     const writing = action === "software";
+    const passwordMode = this.config.CPANEL_AUTH_MODE === "password";
+    let headers: Record<string, string>;
+    if (passwordMode) {
+      const credentials = this.credentials();
+      headers = { Authorization: `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64")}`, Accept: "application/json" };
+    } else {
+      const session = await this.whmSession(url.origin);
+      url.pathname = `${session.token}${url.pathname}`;
+      headers = { Cookie: session.cookie, Accept: "application/json" };
+    }
     try {
       const response = await fetch(url, { method: writing ? "POST" : "GET", redirect: "error",
-        headers: { Authorization: `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64")}`, Accept: "application/json" },
+        headers,
         ...(writing ? { body: params } : {}), signal: AbortSignal.timeout(this.config.WHM_TIMEOUT_MS) });
       if (response.status === 401 || response.status === 403) {
-        const diagnostic = writing ? "No installation was confirmed. Check inventory before retrying." : await this.authenticationDiagnostic(url.origin);
-        throw new Error(`cPanel rejected Softaculous authentication with HTTP ${response.status} at ${url.origin} for ${credentials.username}. ${diagnostic} Reconnecting Auth0 does not fix this upstream rejection.`);
+        const diagnostic = writing ? "No installation was confirmed. Check inventory before retrying." : passwordMode ? await this.authenticationDiagnostic(url.origin) : "The WHM session was rejected by the Softaculous endpoint. No installation was started.";
+        throw new Error(`cPanel rejected Softaculous authentication with HTTP ${response.status} at ${url.origin} for ${this.config.CPANEL_USERNAME}. ${diagnostic} Reconnecting Auth0 does not fix this upstream rejection.`);
       }
       if (!response.ok) throw new Error(writing ? "WordPress installation could not be confirmed. Inspect Softaculous before retrying." : "Softaculous inventory is unavailable.");
       const body = await response.json();

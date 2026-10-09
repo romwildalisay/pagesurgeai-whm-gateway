@@ -32,7 +32,7 @@ export function createMcpServer(config: Config, access: { canCreate: boolean; ca
   const whm = new WhmClient(config);
   const securitySchemes = [{ type: "oauth2" as const, scopes: [config.OAUTH_SCOPE] }];
   const server = new McpServer(
-    { name: "pagesurgeai-whm-gateway", version: "0.4.1" },
+    { name: "pagesurgeai-whm-gateway", version: "0.4.2" },
     { instructions: "Inspect hosting, create accounts with creation permission, and install WordPress through Softaculous only on the configured test account with WordPress permission. No account modification, suspension, restoration, deletion, shell access, or WordPress MCP plugin installation is implemented." }
   );
 
@@ -107,7 +107,7 @@ export function createMcpServer(config: Config, access: { canCreate: boolean; ca
 
   server.registerTool("hosting_get_wordpress_status", {
     title: "Inspect WordPress installation",
-    description: "Read Softaculous inventory for the configured cPanel test account's primary domain. Requires one-time private cPanel configuration in Render. Use before installation and after uncertain results; never returns credentials. Unmanaged installations may not appear.",
+    description: "Read Softaculous inventory for the configured cPanel test account's primary domain. Uses the existing WHM reseller token with CPANEL_USERNAME identifying the restricted test account. Use before installation and after uncertain results; never returns credentials. Unmanaged installations may not appear.",
     inputSchema: { username: z.string().regex(/^[a-z][a-z0-9]{0,15}$/) }, annotations, _meta: { securitySchemes }
   }, async ({ username }) => {
     const status = await wordpressStatus(config, username);
@@ -116,7 +116,7 @@ export function createMcpServer(config: Config, access: { canCreate: boolean; ca
 
   server.registerTool("hosting_install_wordpress", {
     title: "Install WordPress on test account",
-    description: "Install WordPress at the HTTPS root of the configured test account's primary domain through Softaculous. Requires whm:read and whm:wordpress plus private cPanel configuration in Render. Set confirm=true only when the user requests installation on this domain. Never overwrites existing files; existing installations are returned without changes. Admin password is generated privately; use Softaculous Login. On uncertain results inspect WordPress Manager before retrying. Does not install the WordPress MCP plugin.",
+    description: "Install WordPress at the HTTPS root of the configured test account's primary domain through Softaculous. Requires whm:read and whm:wordpress plus WHM reseller session access to the configured test account. Set confirm=true only when the user requests installation on this domain. Never overwrites existing files; existing installations are returned without changes. Admin password is generated privately; use Softaculous Login. On uncertain results inspect WordPress Manager before retrying. Does not install the WordPress MCP plugin.",
     inputSchema: wordpressInput, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     _meta: { securitySchemes: [{ type: "oauth2", scopes: [config.OAUTH_SCOPE, WORDPRESS_SCOPE] }] }
   }, async (input) => {
