@@ -28,7 +28,20 @@ async function connectedClient() {
   return { client, server };
 }
 
-describe("PageSurgeAI WHM Gateway v0.3.0", () => {
+describe("PageSurgeAI WHM Gateway v0.4.0", () => {
+  it("denies WordPress installation without verified installation access", async () => {
+    const read = vi.spyOn(WhmClient.prototype, "call");
+    const { client, server } = await connectedClient();
+    const response = await client.callTool({ name: "hosting_install_wordpress", arguments: {
+      username: "labsite", domain: "lab.example.com", site_title: "Lab", admin_email: "owner@example.com", confirm: true
+    } });
+    expect(response.isError).toBe(true);
+    expect(JSON.stringify(response)).toContain("whm:wordpress");
+    expect(read).not.toHaveBeenCalled();
+    const tools = await client.listTools();
+    expect(tools.tools.find((t) => t.name === "hosting_install_wordpress")?._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["whm:read", "whm:wordpress"] }]);
+    await client.close(); await server.close();
+  });
   it("denies creation at the MCP boundary without verified creation access", async () => {
     const write = vi.spyOn(WhmClient.prototype, "createAccount");
     const read = vi.spyOn(WhmClient.prototype, "call");
@@ -43,17 +56,19 @@ describe("PageSurgeAI WHM Gateway v0.3.0", () => {
     await client.close();
     await server.close();
   });
-  it("advertises four read-only tools and one scoped creation tool", async () => {
+  it("advertises five read-only tools and two scoped write tools", async () => {
     const { client, server } = await connectedClient();
     const response = await client.listTools();
     expect(response.tools.map((t) => t.name).sort()).toEqual([
       "hosting_create_account",
       "hosting_get_account",
       "hosting_get_usage",
+      "hosting_get_wordpress_status",
+      "hosting_install_wordpress",
       "hosting_list_accounts",
       "hosting_list_packages"
     ]);
-    for (const tool of response.tools.filter((t) => t.name !== "hosting_create_account")) {
+    for (const tool of response.tools.filter((t) => !["hosting_create_account", "hosting_install_wordpress"].includes(t.name))) {
       expect(tool.annotations?.readOnlyHint).toBe(true);
       expect(tool.annotations?.destructiveHint).toBe(false);
       expect(tool._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["whm:read"] }]);

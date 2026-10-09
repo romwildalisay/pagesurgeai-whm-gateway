@@ -3,6 +3,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createMcpServer } from "./mcp-server.js";
 import { createTokenVerifier, type AuthCheck } from "./auth.js";
 import { CREATE_SCOPE } from "./account-creation.js";
+import { WORDPRESS_SCOPE } from "./wordpress-setup.js";
 import type { Config } from "./config.js";
 
 export function createGatewayApp(config: Config, verifier?: (value: string | undefined, requiredScopes?: string[]) => Promise<AuthCheck>) {
@@ -14,12 +15,12 @@ export function createGatewayApp(config: Config, verifier?: (value: string | und
   const resourceMetadataUrl = `${config.PUBLIC_BASE_URL}/.well-known/oauth-protected-resource/mcp`;
   const authChallenge = `Bearer resource_metadata="${resourceMetadataUrl}", scope="${config.OAUTH_SCOPE}"`;
 
-  app.get("/health", (_req, res) => res.json({ status: "ok", name: "pagesurgeai-whm-gateway", version: "0.3.0", mode: "read-and-create", auth: "oauth2", checks: { process: "ok", oauth_link: "not_checked", whm: "not_checked" } }));
+  app.get("/health", (_req, res) => res.json({ status: "ok", name: "pagesurgeai-whm-gateway", version: "0.4.0", mode: "read-create-and-wordpress", auth: "oauth2", checks: { process: "ok", oauth_link: "not_checked", whm: "not_checked", wordpress: "not_checked" } }));
 
   app.get(["/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp"], (_req, res) => res.json({
     resource: `${config.PUBLIC_BASE_URL}/mcp`,
     authorization_servers: [`${config.OAUTH_ISSUER}/`],
-    scopes_supported: [config.OAUTH_SCOPE, CREATE_SCOPE],
+    scopes_supported: [config.OAUTH_SCOPE, CREATE_SCOPE, WORDPRESS_SCOPE],
     resource_documentation: `${config.PUBLIC_BASE_URL}/health`
   }));
 
@@ -28,22 +29,24 @@ export function createGatewayApp(config: Config, verifier?: (value: string | und
   app.all("/mcp", async (req, res, next) => {
     const messages = Array.isArray(req.body) ? req.body : [req.body];
     const creating = messages.some((message) => message?.method === "tools/call" && message?.params?.name === "hosting_create_account");
-    const scopes = creating ? [config.OAUTH_SCOPE, CREATE_SCOPE] : [config.OAUTH_SCOPE];
+    const installing = messages.some((message) => message?.method === "tools/call" && message?.params?.name === "hosting_install_wordpress");
+    const scopes = [config.OAUTH_SCOPE, ...(creating ? [CREATE_SCOPE] : []), ...(installing ? [WORDPRESS_SCOPE] : [])];
     const auth = await verifyAuthorization(req.header("authorization"), scopes);
     if (!auth.ok) {
       const oauthError = auth.reason === "insufficient_scope" ? "insufficient_scope" : "invalid_token";
-      res.setHeader("WWW-Authenticate", `${creating ? `Bearer resource_metadata="${resourceMetadataUrl}", scope="${scopes.join(" ")}"` : authChallenge}, error="${oauthError}", error_description="Connect PageSurgeAI WHM Gateway to continue"`);
+      res.setHeader("WWW-Authenticate", `${creating || installing ? `Bearer resource_metadata="${resourceMetadataUrl}", scope="${scopes.join(" ")}"` : authChallenge}, error="${oauthError}", error_description="Connect PageSurgeAI WHM Gateway to continue"`);
       return res.status(auth.reason === "insufficient_scope" ? 403 : 401).json({
         error: oauthError,
         error_description: "Connect PageSurgeAI WHM Gateway to continue"
       });
     }
     res.locals.canCreate = creating;
+    res.locals.canInstall = installing;
     next();
   });
 
   app.post("/mcp", async (req, res) => {
-    const server = createMcpServer(config, { canCreate: res.locals.canCreate === true });
+    const server = createMcpServer(config, { canCreate: res.locals.canCreate === true, canInstall: res.locals.canInstall === true });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on("close", () => { void transport.close(); void server.close(); });
     await server.connect(transport);

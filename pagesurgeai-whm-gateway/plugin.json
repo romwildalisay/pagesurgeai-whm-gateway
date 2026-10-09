@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "pagesurgeai-whm-gateway",
-  "version": "0.3.0",
-  "description": "Inspect PageSurgeAI WHM hosting and create accounts with explicitly granted creation permission.",
+  "version": "0.4.0",
+  "description": "Inspect WHM hosting, create accounts, and set up WordPress through a restricted Softaculous test adapter.",
   "author": {
     "name": "PageSurgeAI"
   },

@@ -1,6 +1,6 @@
-# PageSurgeAI WHM Gateway v0.3.0
+# PageSurgeAI WHM Gateway v0.4.0
 
-A Node.js MCP gateway for a cPanel/WHM reseller, with Auth0 authentication, four read-only tools, and one separately authorized account-creation tool.
+A Node.js MCP gateway for a cPanel/WHM reseller, with Auth0 authentication, five read-only tools and separately authorized account-creation and WordPress-installation tools.
 
 ## Tools and permissions
 
@@ -14,7 +14,7 @@ A Node.js MCP gateway for a cPanel/WHM reseller, with Auth0 authentication, four
 
 Creation requires domain, lowercase cPanel username, an exact existing package, contact email, and `confirm: true`. The gateway validates inventory and packages before writing. An existing matching username/domain/package returns `already_exists` without changes; conflicting accounts are rejected. WHM applies server limits and username rules, including any database prefix restrictions.
 
-Creation uses a POST form body. A random password is generated privately; neither it nor raw account-creation output is returned to the client. Shell and reseller access are disabled, existing DNS zones are not overwritten, and package quotas are inherited. Access the resulting cPanel account through WHM or reset its password there. No arbitrary WHM proxy, account modification, deletion, or WordPress installation is provided.
+Creation uses a POST form body. A random password is generated privately; neither it nor raw account-creation output is returned to the client. Shell and reseller access are disabled, existing DNS zones are not overwritten, and package quotas are inherited. Access the resulting cPanel account through WHM or reset its password there. No arbitrary WHM proxy, account modification, deletion, or general WordPress management is provided.
 
 ## Enable creation on the working connection
 
@@ -22,7 +22,7 @@ Creation uses a POST form body. A random password is generated privately; neithe
 2. Add `whm:create` to the protected Auth0 API's permissions alongside `whm:read`. Ensure the authorized user's access token receives both scopes; requesting a scope does not itself grant it. If RBAC is enabled, assign the permission to the appropriate user or role.
 3. Enable Create Accounts (`create-acct`) for the existing backend WHM API token and its reseller owner. Retain read permissions and existing IP restrictions. Do not grant root or unrelated permissions.
 4. Update the existing Web connection's requested scopes to include both permissions, reauthorize as needed, and refresh its discovered tools. The package preserves the registered Web App binding.
-5. Request a specific account, then verify it with account inventory. WordPress installation is a later extension.
+5. Request a specific account, then verify it with account inventory. For WordPress installation, follow the separate test-account setup below.
 
 Read-only tokens continue to work for read operations. Creation fails with HTTP 403 and an insufficient-scope challenge unless both OAuth scopes are verified. All MCP HTTP requests remain protected by the existing OAuth boundary.
 
@@ -45,8 +45,31 @@ The WHM token belongs only in Render's environment. Never place credentials in r
 | `OAUTH_SCOPE` | Base read permission, default `whm:read`; creation also requires `whm:create` |
 | `WHM_TIMEOUT_MS` | WHM request timeout, default `15000` |
 
-Run `npm ci`, `npm run build`, and `npm test` before deployment. Tests mock WHM writes and do not create hosting resources. `/health` reports version `0.3.0` and process status only; it does not test OAuth or WHM. Protected-resource metadata advertises both scopes.
+Run `npm ci`, `npm run build`, and `npm test` before deployment. Tests mock WHM writes and do not create hosting resources. `/health` reports version `0.4.0` and process status only; it does not test OAuth or WHM. Protected-resource metadata advertises all three scopes.
 
 For deployment, see `BEGINNER-DEPLOYMENT.md`. Use `FRESH-START.md` only when recovering a deleted Auth0 client; enabling creation does not require deleting or recreating a working application.
 
 Reference: [WHM createacct](https://api.docs.cpanel.net/specifications/whm.openapi/account-creation/accounts-createacct) and [WHM ACL chart](https://api.docs.cpanel.net/guides/guide-to-whm-plugins/guide-to-whm-plugins-acl-reference-chart).
+
+## WordPress setup with Softaculous (test account only)
+
+The adapter uses Softaculous API script 26 at the Jupiter endpoint on the WHM hostname's cPanel HTTPS port 2083. The WHM token cannot substitute for cPanel end-user authentication here. No root or create-user-session privilege is requested.
+
+Set these private Render environment variables:
+
+| Variable | Test value |
+| --- | --- |
+| `CPANEL_USERNAME` | `authoritysurgeai` |
+| `CPANEL_PASSWORD` | This account's cPanel login password; enter only in Render |
+
+The optional variables do not affect existing WHM tools when unset. If you do not know the password, reset only this test account's password through WHM and then enter it securely in Render. Keep WHM and Auth0 credentials unchanged.
+
+Add `whm:wordpress` to the Auth0 API permissions. With RBAC enabled, grant that permission to the appropriate user/role. Refresh and reauthorize the existing PageSurgeAI WHM Web connection, preserving its client credentials and callback.
+
+`hosting_get_wordpress_status` (read scope) verifies the configured account and reads Softaculous inventory. Run it first to validate cPanel authentication and the actual inventory format. Nonempty unrecognized inventory blocks installation; real server behavior still needs testing.
+
+`hosting_install_wordpress` requires `whm:read whm:wordpress`, username, primary domain, site title, admin email, and `confirm: true`. For this test use `authoritysurgeai` and `mature-yellow-fish.104-219-248-4.cpanel.site`. It verifies ownership and HTTPS, retains Softaculous existing-file protection, installs at the domain root, and generates admin credentials privately. Use WordPress Manager's Login button afterward.
+
+No automatic retries or durable background jobs are provided. A slow installation may finish after a client timeout; inspect WordPress Manager before retrying. WordPress MCP plugin installation is a separate later extension.
+
+Reference: https://www.softaculous.com/docs/api/api/

@@ -10,7 +10,9 @@ const schema = z.object({
   OAUTH_AUDIENCE: z.string().min(1),
   OAUTH_SCOPE: z.string().min(1).default("whm:read"),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
-  WHM_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(15000)
+  WHM_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(15000),
+  CPANEL_USERNAME: z.string().regex(/^[a-z][a-z0-9]{0,15}$/).optional(),
+  CPANEL_PASSWORD: z.string().min(1).optional()
 });
 
 export type Config = z.infer<typeof schema>;

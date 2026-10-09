@@ -1,16 +1,18 @@
 {
   "name": "pagesurgeai-whm-gateway",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
-  "description": "Read-only MCP gateway for a cPanel/WHM reseller account.",
+  "description": "Scoped MCP gateway for WHM account creation and Softaculous WordPress setup.",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "dev": "tsx src/server.ts",
     "test": "vitest run"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.31.0",
     "dotenv": "^17.2.2",

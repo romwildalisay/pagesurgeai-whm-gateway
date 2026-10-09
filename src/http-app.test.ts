@@ -26,6 +26,18 @@ async function endpoint(verifier?: Parameters<typeof createGatewayApp>[1]) {
 }
 
 describe("HTTP OAuth boundary", () => {
+  it("requires a separate WordPress permission before installation", async () => {
+    const fetchSpy = vi.spyOn(WhmClient.prototype, "call");
+    const verify = vi.fn(async () => ({ ok: false as const, reason: "insufficient_scope" as const }));
+    const base = await endpoint(verify);
+    const response = await fetch(base + "/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
+      jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "hosting_install_wordpress", arguments: {} }
+    }) });
+    expect(response.status).toBe(403);
+    expect(verify).toHaveBeenCalledWith(undefined, ["whm:read", "whm:wordpress"]);
+    expect(response.headers.get("www-authenticate")).toContain('scope="whm:read whm:wordpress"');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
   it("allows an authorized creation request through HTTP and returns only safe fields", async () => {
     const read = vi.spyOn(WhmClient.prototype, "call").mockResolvedValueOnce({ data: { acct: [] } }).mockResolvedValueOnce({ data: { pkg: [{ name: "owner_lab" }] } });
     const write = vi.spyOn(WhmClient.prototype, "createAccount").mockResolvedValue({ metadata: { result: 1, output: { raw: "sensitive-secret" } } });
@@ -84,13 +96,13 @@ describe("HTTP OAuth boundary", () => {
       const response = await fetch(base + path);
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ resource: config.OAUTH_AUDIENCE,
-        authorization_servers: ["https://tenant.example.test/"], scopes_supported: ["whm:read", "whm:create"] });
+        authorization_servers: ["https://tenant.example.test/"], scopes_supported: ["whm:read", "whm:create", "whm:wordpress"] });
     }
   });
   it("does not confuse process health with completed OAuth or WHM checks", async () => {
     const base = await endpoint();
     const body = await (await fetch(base + "/health")).json();
-    expect(body.checks).toEqual({ process: "ok", oauth_link: "not_checked", whm: "not_checked" });
+    expect(body.checks).toEqual({ process: "ok", oauth_link: "not_checked", whm: "not_checked", wordpress: "not_checked" });
     expect(JSON.stringify(body)).not.toContain(config.WHM_API_TOKEN);
   });
   it.each(["missing_token", "invalid_token", "insufficient_scope"] as const)(

@@ -1,4 +1,5 @@
 import { createHostingAccount, creationInput, CREATE_SCOPE } from "./account-creation.js";
+import { installWordpress, wordpressStatus, wordpressInput, WORDPRESS_SCOPE } from "./wordpress-setup.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Config } from "./config.js";
@@ -27,12 +28,12 @@ function accountView(a: any) {
   };
 }
 
-export function createMcpServer(config: Config, access: { canCreate: boolean } = { canCreate: false }): McpServer {
+export function createMcpServer(config: Config, access: { canCreate: boolean; canInstall?: boolean } = { canCreate: false }): McpServer {
   const whm = new WhmClient(config);
   const securitySchemes = [{ type: "oauth2" as const, scopes: [config.OAUTH_SCOPE] }];
   const server = new McpServer(
-    { name: "pagesurgeai-whm-gateway", version: "0.3.0" },
-    { instructions: "Inspect the configured WHM reseller account and create accounts only when explicitly requested with the required creation permission. No account modification, suspension, restoration, deletion, or WordPress installation is implemented." }
+    { name: "pagesurgeai-whm-gateway", version: "0.4.0" },
+    { instructions: "Inspect hosting, create accounts with creation permission, and install WordPress through Softaculous only on the configured test account with WordPress permission. No account modification, suspension, restoration, deletion, shell access, or WordPress MCP plugin installation is implemented." }
   );
 
   server.registerTool("hosting_list_accounts", {
@@ -104,5 +105,24 @@ export function createMcpServer(config: Config, access: { canCreate: boolean } =
     return result(created, created.status === "already_exists" ? `Matching hosting account ${input.username} already exists; no changes made.` : `Created hosting account ${input.username} for ${input.domain}. WordPress is not installed yet. Access cPanel through WHM; no password is exposed in chat.`);
   });
 
+  server.registerTool("hosting_get_wordpress_status", {
+    title: "Inspect WordPress installation",
+    description: "Read Softaculous inventory for the configured cPanel test account's primary domain. Requires one-time private cPanel configuration in Render. Use before installation and after uncertain results; never returns credentials. Unmanaged installations may not appear.",
+    inputSchema: { username: z.string().regex(/^[a-z][a-z0-9]{0,15}$/) }, annotations, _meta: { securitySchemes }
+  }, async ({ username }) => {
+    const status = await wordpressStatus(config, username);
+    return result(status, `Found ${status.count} WordPress installation(s) in Softaculous for ${status.domain}.`);
+  });
+
+  server.registerTool("hosting_install_wordpress", {
+    title: "Install WordPress on test account",
+    description: "Install WordPress at the HTTPS root of the configured test account's primary domain through Softaculous. Requires whm:read and whm:wordpress plus private cPanel configuration in Render. Set confirm=true only when the user requests installation on this domain. Never overwrites existing files; existing installations are returned without changes. Admin password is generated privately; use Softaculous Login. On uncertain results inspect WordPress Manager before retrying. Does not install the WordPress MCP plugin.",
+    inputSchema: wordpressInput, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    _meta: { securitySchemes: [{ type: "oauth2", scopes: [config.OAUTH_SCOPE, WORDPRESS_SCOPE] }] }
+  }, async (input) => {
+    if (!access.canInstall) throw new Error("WordPress installation requires whm:wordpress. Reauthorize the existing Web connection with that permission.");
+    const installed = await installWordpress(config, input);
+    return result(installed, installed.status === "already_exists" ? "WordPress is already listed on this domain; no changes made." : "Softaculous confirmed WordPress installation. Use WordPress Manager's Login button. The WordPress MCP plugin is not installed yet.");
+  });
   return server;
 }
