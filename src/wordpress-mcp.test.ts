@@ -9,9 +9,10 @@ function target() {
   vi.spyOn(SoftaculousClient.prototype, "installations").mockResolvedValue([{ id: "26_42", url: "http://lab.example.com/" }]);
 }
 afterEach(() => vi.restoreAllMocks());
-it("blocks other accounts and false confirmation before I/O", async () => {
+it("blocks unverified accounts and false confirmation before installer I/O", async () => {
+  target();
   const fetch = vi.spyOn(globalThis, "fetch");
-  await expect(setupWordpressMcp(config, "other", true)).rejects.toThrow("restricted");
+  await expect(setupWordpressMcp(config, "other", true)).rejects.toThrow("reseller-owned");
   await expect(setupWordpressMcp(config, "labsite", false as any)).rejects.toThrow();
   await expect(wordpressWrite(config, "labsite", "content_create", {}, false as any)).rejects.toThrow();
   expect(fetch).not.toHaveBeenCalled();

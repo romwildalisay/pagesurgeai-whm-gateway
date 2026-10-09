@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import type { Config } from "./config.js";
-import { extractAccounts, WhmClient } from "./whm-client.js";
+import { verifyOwnedAccount, WhmClient } from "./whm-client.js";
 
 export const WORDPRESS_SCOPE = "whm:wordpress";
 export const wordpressInput = {
@@ -16,13 +16,13 @@ type InstallRequest = z.infer<typeof schema>;
 type Installation = { id: string; url: string };
 
 export class SoftaculousClient {
-  constructor(private readonly config: Config) {}
+  constructor(private readonly config: Config, private readonly username = config.CPANEL_USERNAME) {}
   private session?: { token: string; cookie: string };
   private async whmSession(origin: string) {
     if (this.session) return this.session;
-    if (!this.config.CPANEL_USERNAME) throw new Error("WordPress setup is not configured. Set CPANEL_USERNAME to the test account; no cPanel password is required for WHM session authentication.");
+    if (!this.username) throw new Error("A cPanel username is required; no per-account password is needed for WHM sessions.");
     try {
-      const data = await new WhmClient(this.config).createCpanelSession(this.config.CPANEL_USERNAME);
+      const data = await new WhmClient(this.config).createCpanelSession(this.username);
       const url = new URL(data.url);
       let token = data.cp_security_token;
       if (url.origin !== origin || url.username || url.password) throw new Error("WHM session activation: login URL did not match the configured HTTPS cPanel origin.");
@@ -60,6 +60,7 @@ export class SoftaculousClient {
     }
   }
   private credentials() {
+    if (this.username !== this.config.CPANEL_USERNAME) throw new Error("Legacy password authentication cannot access another account. Use WHM session authentication for account-wide access.");
     if (!this.config.CPANEL_USERNAME || !this.config.CPANEL_PASSWORD) throw new Error("WordPress setup is not configured. Set CPANEL_USERNAME and CPANEL_PASSWORD privately in Render; never send passwords in chat.");
     return { username: this.config.CPANEL_USERNAME, password: this.config.CPANEL_PASSWORD };
   }
@@ -78,13 +79,18 @@ export class SoftaculousClient {
       return "The read-only UAPI response did not confirm successful authentication.";
     } catch { return "The read-only UAPI authentication check could not be completed securely."; }
   }
-  async request(action: "installations" | "software" | "email" | "wordpress", params?: URLSearchParams | FormData): Promise<any> {
+  async request(action: "installations" | "software" | "email" | "wordpress" | "remove", params?: URLSearchParams | FormData): Promise<any> {
     const url = new URL(this.config.WHM_BASE_URL);
     url.port = "2083";
     url.pathname = "/frontend/jupiter/softaculous/index.live.php";
     url.username = ""; url.password = ""; url.search = ""; url.hash = "";
     url.searchParams.set("api", "json"); url.searchParams.set("act", action);
     if (action === "software") url.searchParams.set("soft", "26");
+    if (action === "remove") {
+      const id = params instanceof URLSearchParams ? params.get("insid") : null;
+      if (!id || !/^26_[0-9]+$/.test(id)) throw new Error("A verified WordPress installation ID is required for removal.");
+      url.searchParams.set("insid", id);
+    }
     if (action === "wordpress" && params instanceof FormData) url.searchParams.set("upload", "1");
     const writing = action === "software" || params !== undefined;
     const passwordMode = this.config.CPANEL_AUTH_MODE === "password";
@@ -103,7 +109,7 @@ export class SoftaculousClient {
         ...(writing ? { body: params } : {}), signal: AbortSignal.timeout(this.config.WHM_TIMEOUT_MS) });
       if (response.status === 401 || response.status === 403) {
         const diagnostic = writing ? "No installation was confirmed. Check inventory before retrying." : passwordMode ? await this.authenticationDiagnostic(url.origin) : "The WHM session was rejected by the Softaculous endpoint. No installation was started.";
-        throw new Error(`cPanel rejected Softaculous authentication with HTTP ${response.status} at ${url.origin} for ${this.config.CPANEL_USERNAME}. ${diagnostic} Reconnecting Auth0 does not fix this upstream rejection.`);
+        throw new Error(`cPanel rejected Softaculous authentication with HTTP ${response.status} at ${url.origin} for ${this.username}. ${diagnostic} Reconnecting Auth0 does not fix this upstream rejection.`);
       }
       if (!response.ok && action === "wordpress") throw new Error("WordPress Manager operation was not confirmed. Inspect installed plugins before retrying.");
       if (!response.ok && action === "email") throw new Error("Softaculous email settings could not be confirmed. No installation was started.");
@@ -112,6 +118,7 @@ export class SoftaculousClient {
       if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Softaculous response was not recognized. Inspect WordPress Manager before retrying.");
       return body;
     } catch (error) {
+      if (action === "remove") throw new Error("WordPress removal was not confirmed. Inspect Softaculous and files before retrying; removal may have completed.");
       if (action === "wordpress") throw new Error("WordPress Manager operation was not confirmed. Inspect installed plugins before retrying; do not assume the upload failed.");
       if (error instanceof Error && /^(cPanel rejected|WordPress installation could|Softaculous inventory|Softaculous response|Softaculous email)/.test(error.message)) throw error;
       if (action === "email") throw new Error("Softaculous email settings could not be confirmed. Inspect email settings before retrying; no installation was started.");
@@ -150,11 +157,7 @@ export function hasErrors(value: unknown) {
 }
 
 export async function verifiedAccount(config: Config, username: string) {
-  if (username !== config.CPANEL_USERNAME) throw new Error("WordPress setup is restricted to the cPanel test account configured in Render.");
-  const accounts = extractAccounts(await new WhmClient(config).call("accountsummary", { user: username }));
-  const account = accounts.find((a) => a.user === username && a.owner === config.WHM_USERNAME);
-  if (!account || Number(account.suspended)) throw new Error("An active reseller-owned test account could not be verified.");
-  return account;
+  return verifyOwnedAccount(config, username);
 }
 
 function installationForDomain(installations: Installation[], domain: string) {
@@ -166,11 +169,11 @@ function installationForDomain(installations: Installation[], domain: string) {
 export async function wordpressStatus(config: Config, username: string) {
   const account = await verifiedAccount(config, username);
   const domain = String(account.domain).toLowerCase();
-  const installations = installationForDomain(await new SoftaculousClient(config).installations(), domain);
+  const installations = installationForDomain(await new SoftaculousClient(config, username).installations(), domain);
   return { username, domain, installations, count: installations.length, source: "Softaculous inventory; unmanaged WordPress installations may not be listed" };
 }
 
-async function configureInstallationEmail(client: SoftaculousClient, contactEmail: unknown) {
+export async function configureInstallationEmail(client: SoftaculousClient, contactEmail: unknown) {
   const email = z.string().trim().email().max(254).safeParse(contactEmail);
   if (!email.success) throw new Error("The hosting account has no valid contact email. Set its contact email in WHM before requesting credential delivery; no installation was started.");
   const body = await client.request("email", new URLSearchParams({ editemailsettings: "1", email: email.data, ins_email: "1" }));
@@ -180,7 +183,7 @@ async function configureInstallationEmail(client: SoftaculousClient, contactEmai
 
 export async function configureWordpressEmail(config: Config, username: string) {
   const account = await verifiedAccount(config, username);
-  const recipient = await configureInstallationEmail(new SoftaculousClient(config), account.email);
+  const recipient = await configureInstallationEmail(new SoftaculousClient(config, username), account.email);
   return { status: "configured", username, recipient, provider: "Softaculous", existing_credentials_sent: false,
     password_inclusion: "Requires Softaculous Email settings > Email password in plain text", inbox_delivery: "not_verified" };
 }
@@ -188,8 +191,8 @@ export async function configureWordpressEmail(config: Config, username: string) 
 export async function installWordpress(config: Config, input: InstallRequest) {
   const request = schema.parse(input);
   const account = await verifiedAccount(config, request.username);
-  if (String(account.domain).toLowerCase() !== request.domain) throw new Error("The requested domain does not match the configured test account's primary domain.");
-  const client = new SoftaculousClient(config);
+  if (String(account.domain).toLowerCase() !== request.domain) throw new Error("The requested domain does not match the selected account's primary domain.");
+  const client = new SoftaculousClient(config, request.username);
   const existing = installationForDomain(await client.installations(), request.domain);
   if (existing.length) return { status: "already_exists", username: request.username, domain: request.domain, installations: existing };
   // Explicitly authorized HTTP exception for this isolated test domain only.
@@ -203,7 +206,7 @@ export async function installWordpress(config: Config, input: InstallRequest) {
       const target = new URL(response.headers.get("location") ?? "", `${protocol}://${request.domain}`);
       if (target.protocol !== `${protocol}:` || target.hostname !== request.domain) throw new Error("Unexpected redirect");
     }
-  } catch { throw new Error(`The test domain's ${protocol.toUpperCase()} could not be verified. Fix DNS/connectivity${protocol === "https" ? "/SSL" : ""} before installation; no installation was started.`); }
+  } catch { throw new Error(`The domain's ${protocol.toUpperCase()} could not be verified. Fix DNS/connectivity${protocol === "https" ? "/SSL" : ""} before installation; no installation was started.`); }
   const recipient = await configureInstallationEmail(client, account.email);
   const password = `Aa9!${randomBytes(32).toString("base64url")}`;
   const params = new URLSearchParams({ softsubmit: "1", softdomain: request.domain, softdirectory: "", softproto: protocol === "http" ? "1" : "3",

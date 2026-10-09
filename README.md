@@ -93,3 +93,16 @@ Softaculous's separate Email settings > Email password in plain text option must
 `hosting_wordpress_read` and `hosting_wordpress_write` use the existing OAuth Web connection, then send a private account/installation-specific Bearer token to WordPress over validated HTTPS. The token is derived with domain-separated HMAC-SHA256 from the existing WHM secret, surviving Render restarts without one environment variable per account. Rotating the WHM secret or manually regenerating the WordPress token invalidates the bridge; reconnecting Auth0 will not repair that mismatch. No Bearer token is exposed in tool results. Both setup and writes require `whm:wordpress`, plus explicit confirmation; reads require `whm:read`.
 
 The isolated HTTP test site can receive the plugin through HTTPS cPanel, but cannot authenticate publicly until its SSL certificate works. `installed_https_required` does not mean connected. Refresh the existing Web connection's discovered tools after deployment. Verify `get_site_info` and current content before user-authorized changes. Never automatically retry uncertain writes. New content should remain draft unless publishing was requested.
+
+
+## Account-wide lifecycle tools (0.7.0)
+
+The fixed CPANEL_USERNAME restriction has been removed. Each operation verifies the requested account against WHM ownership and selects that user's HTTPS cPanel session. CPANEL_USERNAME is now an optional legacy default; per-account cPanel credentials are unnecessary. Legacy password mode remains restricted to its configured user. Only accounts verified by this WHM connection are eligible; an independent WordPress connection cannot establish hosting access.
+
+New tools: hosting_prepare_destructive_action (read-only preview), hosting_delete_wordpress, hosting_reinstall_wordpress and hosting_delete_account. Execution requires an exact target-specific confirmation and a ten-minute single-use preview. The preview shows the impact and does not create backups. WordPress removal deletes the entire installation directory, database and database user; shared or unverified paths/databases block it. Fresh reinstall supports the primary-domain root and defaults to fresh MCP setup. Account termination removes all account data but retains DNS.
+
+Add whm:delete to the existing Auth0 API permissions and grant it to the authorized connection/user; reauthorize with whm:read whm:delete and whm:wordpress for WordPress destruction. WHM termination also requires Terminate Accounts (kill-acct) permission on the existing WHM token. These permissions are not changed automatically. Refresh the Web connection's tools after deployment.
+
+No bulk deletion, forced permission changes or automatic retries are implemented. Ownership, account identity and installation inventory are revalidated; previews are consumed before destructive I/O and lost on restart. Report partial resets as removed_reinstall_not_confirmed. No live deletion was performed during deployment validation.
+
+Official API references: https://www.softaculous.com/docs/api/api/ (Remove an Installed Script), https://api.docs.cpanel.net/specifications/whm.openapi/account-management/accounts-removeacct and https://api.docs.cpanel.net/guides/guide-to-whm-plugins/guide-to-whm-plugins-acl-reference-chart.

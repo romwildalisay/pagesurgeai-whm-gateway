@@ -26,6 +26,15 @@ async function endpoint(verifier?: Parameters<typeof createGatewayApp>[1]) {
 }
 
 describe("HTTP OAuth boundary", () => {
+  it.each(["hosting_delete_account", "hosting_delete_wordpress", "hosting_reinstall_wordpress"])("requires deletion scope before %s can reach hosting", async name => {
+    const read = vi.spyOn(WhmClient.prototype, "call");
+    const verify = vi.fn(async () => ({ ok: false as const, reason: "insufficient_scope" as const }));
+    const base = await endpoint(verify);
+    const response = await fetch(base + "/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: {} } }) });
+    const scopes = name === "hosting_delete_account" ? ["whm:read", "whm:delete"] : ["whm:read", "whm:wordpress", "whm:delete"];
+    expect(verify).toHaveBeenCalledWith(undefined, scopes);
+    expect(response.status).toBe(403); expect(read).not.toHaveBeenCalled();
+  });
   it.each(["hosting_install_wordpress", "hosting_configure_wordpress_email", "hosting_setup_wordpress_mcp", "hosting_wordpress_write"])("requires WordPress permission for %s", async (toolName) => {
     const fetchSpy = vi.spyOn(WhmClient.prototype, "call");
     const verify = vi.fn(async () => ({ ok: false as const, reason: "insufficient_scope" as const }));
@@ -96,7 +105,7 @@ describe("HTTP OAuth boundary", () => {
       const response = await fetch(base + path);
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ resource: config.OAUTH_AUDIENCE,
-        authorization_servers: ["https://tenant.example.test/"], scopes_supported: ["whm:read", "whm:create", "whm:wordpress"] });
+        authorization_servers: ["https://tenant.example.test/"], scopes_supported: ["whm:read", "whm:create", "whm:wordpress", "whm:delete"] });
     }
   });
   it("does not confuse process health with completed OAuth or WHM checks", async () => {

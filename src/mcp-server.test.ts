@@ -29,6 +29,12 @@ async function connectedClient() {
 }
 
 describe("PageSurgeAI WHM Gateway v0.4.0", () => {
+  it.each(["hosting_delete_account", "hosting_delete_wordpress", "hosting_reinstall_wordpress"])("denies %s without verified destructive access", async name => {
+    const read = vi.spyOn(WhmClient.prototype, "call"); const { client, server } = await connectedClient();
+    const response = await client.callTool({ name, arguments: { plan_id: "a".repeat(64), confirmation: "wrong", confirm: true, site_title: "Fresh", admin_email: "owner@example.com" } });
+    expect(response.isError).toBe(true); expect(JSON.stringify(response)).toContain("whm:delete"); expect(read).not.toHaveBeenCalled();
+    await client.close(); await server.close();
+  });
   it.each(["hosting_install_wordpress", "hosting_configure_wordpress_email", "hosting_setup_wordpress_mcp", "hosting_wordpress_write"])("denies %s without verified WordPress access", async toolName => {
     const read = vi.spyOn(WhmClient.prototype, "call");
     const { client, server } = await connectedClient();
@@ -62,17 +68,21 @@ describe("PageSurgeAI WHM Gateway v0.4.0", () => {
     expect(response.tools.map((t) => t.name).sort()).toEqual([
       "hosting_configure_wordpress_email",
       "hosting_create_account",
+      "hosting_delete_account",
+      "hosting_delete_wordpress",
       "hosting_get_account",
       "hosting_get_usage",
       "hosting_get_wordpress_status",
       "hosting_install_wordpress",
       "hosting_list_accounts",
       "hosting_list_packages",
+      "hosting_prepare_destructive_action",
+      "hosting_reinstall_wordpress",
       "hosting_setup_wordpress_mcp",
       "hosting_wordpress_read",
       "hosting_wordpress_write"
     ]);
-    for (const tool of response.tools.filter((t) => !["hosting_create_account", "hosting_install_wordpress", "hosting_configure_wordpress_email", "hosting_setup_wordpress_mcp", "hosting_wordpress_write"].includes(t.name))) {
+    for (const tool of response.tools.filter((t) => !["hosting_create_account", "hosting_install_wordpress", "hosting_configure_wordpress_email", "hosting_setup_wordpress_mcp", "hosting_wordpress_write", "hosting_delete_account", "hosting_delete_wordpress", "hosting_reinstall_wordpress"].includes(t.name))) {
       expect(tool.annotations?.readOnlyHint).toBe(true);
       expect(tool.annotations?.destructiveHint).toBe(false);
       expect(tool._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["whm:read"] }]);

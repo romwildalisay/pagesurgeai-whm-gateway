@@ -1,61 +1,57 @@
 ---
 name: inspect-whm
-description: Inspect PageSurgeAI WHM accounts, packages, and usage, create a hosting account, or set up WordPress on the configured test account when explicitly requested. Use for hosting inventory, account lookup, usage, account provisioning, and WordPress installation through the connected Web gateway.
+description: Inspect PageSurgeAI WHM accounts, packages and usage; create accounts; install and manage WordPress; preview and execute explicitly approved WordPress removal/reinstallation or account termination across accounts accessible to the configured WHM identity.
 ---
 
-# Manage WHM hosting
+# Manage hosting and WordPress
 
-Use the existing PageSurgeAI WHM Web connection. Preserve its App binding and working OAuth settings.
+Use the existing PageSurgeAI WHM Web connection. Preserve its App binding, OAuth settings and sharing. Account-wide capability access is not permission to change or delete any account.
 
-For inspection, use the four read-only tools:
+## Inventory and account creation
 
-- Call `hosting_list_accounts` to discover usernames and domains.
-- Call `hosting_get_account` with an exact cPanel username for details.
-- Call `hosting_list_packages` to inspect available reseller packages.
-- Call `hosting_get_usage` with an exact cPanel username for usage.
+Use `hosting_list_accounts`, `hosting_get_account`, `hosting_list_packages` and `hosting_get_usage` for read-only inspection. Obtain exact usernames/domains from reads; never guess a package.
 
-For account creation:
+Create only when the user requests that exact account and supplies domain, username, package and contact email. Use `hosting_create_account` with `confirm: true`. Requires `whm:read whm:create` and backend WHM Create Accounts permission. Honor authorization already supplied. Report created/already_exists accurately. Generated credentials stay private; use WHM for access.
 
-1. Require an explicit user request to create an account. Never infer this from an inventory request.
-2. Obtain the domain, cPanel username, exact package name, and contact email. List packages to verify the choice; never invent a package.
-3. Use `hosting_create_account` with those fields and `confirm: true` when the user has authorized that specific account. Honor authorization already provided; do not ask again unnecessarily.
-4. Require both `whm:read` and `whm:create` in OAuth and Create Accounts permission on the backend WHM token. If the tool is absent, explain that the deployed gateway and the existing Web connection's discovered tools must be refreshed; do not claim creation succeeded.
-5. Report `created` or `already_exists` exactly. For a timeout, network failure, or uncertain result, inspect inventory before any retry. Never blindly repeat a write.
-6. Explain that account credentials are generated privately. Direct the user to WHM to access cPanel or reset its password. Never request or display secrets in chat.
+Never expose passwords, WHM tokens, cPanel sessions or Bearer tokens. Never use arbitrary WHM calls, shell commands, forced privilege changes or bulk deletion. If a write times out, inspect inventory before further action.
 
-Never use arbitrary WHM calls, shell commands, or unsupported account modification, suspension, restoration, or deletion. Account creation does not install WordPress.
+Distinguish Auth0/OAuth scope failures from WHM 401/403 and session failures. Reconnecting Auth0 does not repair upstream permissions or credentials. For a deleted Auth0 application use [fresh connection recovery](references/fresh-connection.md).
 
-Distinguish OAuth challenges from upstream WHM errors. For missing creation scope, reauthorize the existing connection after granting that permission. For WHM HTTP 401/403, check backend credentials, token permissions, and access restrictions. A healthy process does not prove OAuth or WHM access works.
+## WordPress across accessible accounts
 
-If the user deleted an Auth0 application, use [fresh connection recovery](references/fresh-connection.md). Never request a client secret, access token, password, or WHM API token in chat.
+There is no fixed test-account restriction. The gateway selects the cPanel username from each request, verifies it through WHM accountsummary, and requires reseller ownership (or the configured WHM identity's own verified cPanel account). It creates a fresh HTTPS cPanel session through the existing WHM token. No extra Render username/password is needed per account. CPANEL_USERNAME is an optional legacy default, not an account allowlist. Legacy CPANEL_AUTH_MODE=password supports only its configured username; use WHM sessions for account-wide access.
 
-## WordPress setup on the test account
+All accounts means accounts verified as accessible through this WHM connection. A separate working WordPress connection does not prove WHM account access. If accountsummary rejects pageobol or a domain is absent, report that limitation; do not bypass it or promise hosting deletion/reset. The Namecheap - PageSurgeAI WordPress connection to pagesurgeai.com remains separate and does not itself provide WordPress-core uninstall or hosting termination.
 
-Use `hosting_get_wordpress_status` with the exact test-account username to inspect Softaculous before installation. The server verifies reseller ownership and restricts access to `CPANEL_USERNAME` configured privately in Render. Use the existing WHM reseller token for a temporary cPanel session; keep cookies and session URLs private. Never request root access or automatically change token/reseller privileges. If session creation is rejected, report the failure and required operation without claiming authentication succeeded.
+Use `hosting_get_wordpress_status` before installing. Its inventory lists WordPress on the account's primary domain; unmanaged installations may be absent. Use `hosting_install_wordpress` only for a user-requested primary-domain root installation with domain, title, admin email and confirm=true. Requires `whm:read whm:wordpress`. Existing sites return already_exists without changes; existing-file protection remains enabled. Never infer an empty inventory means an empty web directory.
 
-Require the target domain, site title, and admin email. Install only on the test account's primary domain at its root. Require HTTPS except for the explicitly authorized isolated test domain `mature-yellow-fish.104-219-248-4.cpanel.site`, which currently uses HTTP while SSL is unavailable. Keep all WHM and cPanel authentication on verified HTTPS. Explain that website traffic is unencrypted until SSL is installed; do not extend the exception to another domain. Treat a user request to proceed with WordPress setup on a named domain as authorization to install there; honor authorization already provided. Call `hosting_install_wordpress` with those settings and `confirm: true` only within that request.
+Require valid HTTPS except for the existing explicitly authorized isolated test domain mature-yellow-fish.104-219-248-4.cpanel.site. That HTTP exception never permits Bearer authentication or sending passwords/cPanel sessions over HTTP. Never disable certificate verification. Report completion only after API confirmation. Use Softaculous WordPress Manager Login; passwords stay private.
 
-Installation requires `whm:read whm:wordpress`, the existing backend WHM reseller token, and `CPANEL_USERNAME` identifying the restricted test account in Render. By default, `CPANEL_AUTH_MODE=whm-session` creates a temporary session via WHM `create_user_session`; individual cPanel passwords are not required. Keep ownership and test-account checks before all operations. The optional legacy `CPANEL_AUTH_MODE=password` adapter requires `CPANEL_PASSWORD` entered only in Render's secure environment settings, never in chat. The adapter uses the WHM hostname over HTTPS on cPanel port 2083 with the Jupiter Softaculous endpoint; authentication or endpoint availability must be tested on the actual server.
+## Installation emails
 
-Never disable TLS verification, overwrite files, reinstall an existing site, or retry an uncertain write blindly. Inspect WordPress Manager and inventory after timeout or partial success. An empty Softaculous inventory does not prove that no unmanaged website files exist.
+`hosting_configure_wordpress_email` configures Softaculous installation email to the verified WHM account contact. Use only when requested with confirm=true and `whm:read whm:wordpress`. Do not substitute recipients. New installations also configure that notification. Password inclusion depends on Softaculous Email settings > Email password in plain text. Report an email request separately from verified inbox delivery. Never reinstall or reset a password to test email delivery.
 
-Report `installed` only after the API confirms completion and verify status afterward. Report `already_exists` as no changes. Use the WordPress Manager Login button for admin access; generated passwords remain private. The WordPress MCP plugin is a separate next step and is not installed by this tool.
+## WordPress MCP and prompt changes
 
-## WordPress installation emails
+`hosting_setup_wordpress_mcp` installs the user's pinned WordPress MCP Manager 2.0.5 and configures a private derived Bearer hash for pagesurgeadmin on first activation. The existing OAuth gateway bridges WordPress; no per-account Render secret is needed. Preserve existing plugins/tokens. Report existing_plugin_needs_connection or installed_https_required accurately. Token regeneration or WHM-token rotation can invalidate a bridge; do not perform either merely to troubleshoot.
 
-Use `hosting_configure_wordpress_email` with the exact configured test-account username and `confirm: true` only when email setup is requested. Require `whm:read whm:wordpress`. The server verifies ownership and uses the current WHM contact email; never substitute an arbitrary recipient. This configures Softaculous installation notifications, not an email of an existing password.
+Call `hosting_wordpress_read` with tool=get_site_info before changes, then read exact IDs/current content. Valid WordPress HTTPS is required. Common reads include content_list (post_type=page/post), content_get (id), themes_list, plugins_list and list_wordpress_capabilities.
 
-New WordPress installations automatically configure installation email delivery to the verified hosting contact before installing. Report the email request separately from inbox receipt. Password inclusion requires Softaculous Email settings > Email password in plain text; do not claim the password was included or delivered without evidence. The user must enable that setting in Softaculous; the gateway does not guess an undocumented API field.
+Use `hosting_wordpress_write` with `confirm: true` only for user-authorized changes; requires `whm:read whm:wordpress`. Parameters follow WordPress MCP Manager. content_create takes post_type, title, content, status and optional slug/excerpt/parent/featured_media/terms/meta. content_update takes exact id and requested fields. New pages default to draft unless publication was requested. Theme/plugin installation uses base64_zip; activation uses stylesheet/plugin from reads. Never invent writes to test connectivity.
 
-Never reinstall a site, retrieve stored passwords, reset a password, or send a credential message merely to test this setup. If the user requests existing-site credentials, explain that this function cannot resend the original password. Keep all credentials out of chat. Inspect inbox receipt only when a future explicitly authorized installation sends its email.
+## WordPress removal, fresh reinstall and account termination
 
-## WordPress MCP Manager and prompt changes
+For an explicit request to destroy a named target, first call `hosting_prepare_destructive_action` with action=delete_wordpress, reinstall_wordpress or delete_account, exact username and primary domain. WordPress actions also need the exact installation_id from inventory. This tool reads state, makes no hosting changes, and returns impact, backup_created=false, a ten-minute single-use plan_id, and the exact confirmation text.
 
-Use `hosting_setup_wordpress_mcp` with the configured test-account username and `confirm: true` when the user requests installation/connection of their WordPress MCP Manager. Version 2.0.5 is bundled from the user's package. This modifies the shared gateway's available tools, while retaining the existing Web App/OAuth connection and account restrictions. The first activation configures a private token hash for `pagesurgeadmin`; the gateway derives the Bearer token from its existing private WHM token with account and installation separation. No extra per-account Render variable or WordPress password is needed. Tokens never appear in chat. Rotating the WHM token or regenerating the WordPress token changes this connection; do not do either to troubleshoot without an explicit request.
+Present the material impact before executing and ensure the user authorized this specific operation and target. A request to add capabilities, use all accounts, inspect capabilities, or prepare a preview does not authorize deletion. Honor an already explicit target-specific instruction without asking again unnecessarily; clarify ambiguous targets.
 
-Public Bearer requests always require valid HTTPS. The HTTP installation exception does not permit Bearer authentication over HTTP or disabling TLS verification. Report `installed_https_required` as installation requested/confirmed by Softaculous with connection pending, never as connected. Report `existing_plugin_needs_connection` accurately; do not overwrite an existing plugin or token. On uncertain upload results, inspect WordPress Manager before retrying. If these tools are absent, explain that the existing PageSurgeAI WHM Web connection's tools need refreshing; do not claim plugin installation or token configuration has occurred.
+WordPress removal deletes all files within its installation directory (including unmanaged files), its database and its database user, while keeping the hosting account/mailboxes. Shared paths/databases/users or incomplete Softaculous metadata block removal. Reinstall currently supports the primary-domain root. The tools do not create backups; do not claim otherwise.
 
-Call `hosting_wordpress_read` with `tool: get_site_info` to verify the target before writes, then read existing content or exact IDs. Use the tool's `parameters` object for WordPress MCP Manager arguments. Common reads: `content_list` with `post_type: page` or `post`, `content_get` with `id`, and `themes_list`/`plugins_list` with an empty object. Use `list_wordpress_capabilities` to inspect supported actions.
+Account termination deletes every website/file/database/mailbox in that account, while retaining the DNS zone. The reseller's own account may also disable automation and reseller access. Explain this additional impact if that account is selected. The upstream WHM token must have Terminate Accounts (kill-acct) permission; do not grant it automatically.
 
-Use `hosting_wordpress_write` only for user-authorized changes, with `confirm: true`. The server requires `whm:read whm:wordpress`, reseller ownership, the configured test account and verified HTTPS. For `content_create`, parameters include `post_type`, `title`, `content` (WordPress-compatible HTML), `status: draft`, optional `slug`, `excerpt`, `parent`, `featured_media`, `terms`, and `meta`. For `content_update`, provide the exact `id` and only requested fields. Keep new pages as drafts unless publication was requested. Theme/plugin installation uses `base64_zip`; activation uses `stylesheet` or `plugin` from a prior read. Do not invent site changes to test the connection. Honor authorization already given; do not ask again unnecessarily. Inspect current state after any uncertain write and never blindly repeat it. Native WordPress capabilities also apply. No shell or arbitrary WHM command is exposed.
+Execute the matching tool: `hosting_delete_wordpress`, `hosting_reinstall_wordpress` or `hosting_delete_account`, supplying the returned plan_id, exact confirmation and confirm=true only for target-specific approval. All need `whm:read whm:delete`; WordPress destruction also needs `whm:wordpress`. Reinstall also takes site_title, admin_email and setup_mcp (default true). It validates connectivity/email settings before removal and then installs fresh WordPress and attempts fresh MCP setup.
+
+The backend revalidates ownership, account identity and installation inventory. Plans expire, are single-use and become invalid after a gateway restart. They are consumed before destructive I/O. If removal/termination is uncertain, inspect current state; never blindly retry or reuse a plan. Report removed_reinstall_not_confirmed separately from reinstalled. A completed removal with failed/uncertain reinstallation is not a successful reset.
+
+After deployment refresh the existing connection's tools. Add whm:delete to the existing Auth0 API permissions, grant it to the authorized connection/user and reauthorize with required scopes. A healthy process and passing automated tests do not prove upstream deletion permission. Do not perform a live destructive test unless explicitly requested for an exact target.
 

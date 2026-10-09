@@ -18,7 +18,7 @@ export class WhmClient {
   }
 
   async createCpanelSession(username: string) {
-    if (!this.config.CPANEL_USERNAME || username !== this.config.CPANEL_USERNAME) throw new WhmError("WHM session access is restricted to the configured test account.");
+    await verifyOwnedAccount(this.config, username);
     try {
       const body = await this.request("create_user_session", { user: username, service: "cpaneld", preferred_domain: new URL(this.config.WHM_BASE_URL).hostname }, false);
       if (body?.metadata?.result !== 1 || !body?.data?.url || !body?.data?.cp_security_token) throw new Error("Invalid session response");
@@ -30,6 +30,16 @@ export class WhmClient {
 
   async createAccount(params: { username: string; domain: string; plan: string; contactemail: string; password: string }) {
     return this.request("createacct", { ...params, hasshell: 0, reseller: 0, forcedns: 0, savepkg: 0, showpass: "n" }, true);
+  }
+
+  async deleteAccount(username: string, domain: string) {
+    const account = await verifyOwnedAccount(this.config, username, true);
+    if (String(account.domain).toLowerCase() !== domain) throw new WhmError("Account domain changed; deletion was blocked.");
+    try {
+      const body = await this.request("removeacct", { username, keepdns: 1 }, true);
+      if (body?.metadata?.result !== 1 && body?.metadata?.result !== true) throw new Error("Unrecognized response");
+      return { deleted: true, username, domain, dns_zone_retained: true };
+    } catch { throw new WhmError("Account deletion was not confirmed. Check WHM inventory before any further action; do not retry automatically. Verify Terminate Accounts (kill-acct) permission if WHM rejected the request."); }
   }
 
   private async request(functionName: string, params: Record<string, string | number>, creating: boolean): Promise<any> {
@@ -47,7 +57,7 @@ export class WhmClient {
         headers: {
           Authorization: `whm ${this.config.WHM_USERNAME}:${this.config.WHM_API_TOKEN}`,
           Accept: "application/json",
-          "User-Agent": "PageSurgeAI-WHM-Gateway/0.5.0"
+          "User-Agent": "PageSurgeAI-WHM-Gateway/0.7.0"
         },
         signal: controller.signal
       });
@@ -73,6 +83,14 @@ export class WhmClient {
       clearTimeout(timeout);
     }
   }
+}
+
+export async function verifyOwnedAccount(config: Config, username: string, allowSuspended = false) {
+  const user = validateCpanelUser(username);
+  const accounts = extractAccounts(await new WhmClient(config).call("accountsummary", { user }));
+  const account = accounts.find(a => a.user === user && (a.owner === config.WHM_USERNAME || user === config.WHM_USERNAME));
+  if (!account || (!allowSuspended && Number(account.suspended))) throw new WhmError("A permitted reseller-owned account could not be verified.");
+  return account;
 }
 
 export function validateCpanelUser(user: string): string {

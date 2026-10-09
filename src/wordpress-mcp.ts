@@ -14,7 +14,7 @@ async function target(config: Config, username: string) {
   z.object(wordpressAccountInput).strict().parse({ username });
   const account = await verifiedAccount(config, username);
   const domain = z.string().toLowerCase().regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/).parse(account.domain);
-  const client = new SoftaculousClient(config);
+  const client = new SoftaculousClient(config, username);
   const installations = (await client.installations()).filter(i => new URL(i.url).hostname === domain);
   if (installations.length !== 1 || !/^26_[0-9]+$/.test(installations[0].id)) throw new Error("Exactly one verified WordPress installation is required on the test account's primary domain.");
   const installation = installations[0];

@@ -12,7 +12,7 @@ it("requires explicit confirmation and restricts the account, domain, and owner 
   const write = vi.spyOn(SoftaculousClient.prototype, "request");
   const whm = account();
   await expect(installWordpress(config, { ...input, confirm: false } as any)).rejects.toThrow();
-  await expect(installWordpress(config, { ...input, username: "otheruser" })).rejects.toThrow("restricted");
+  await expect(installWordpress(config, { ...input, username: "otheruser" })).rejects.toThrow("reseller-owned");
   await expect(installWordpress(config, { ...input, domain: "other.example.com" })).rejects.toThrow("does not match");
   whm.mockResolvedValue({ data: { acct: [{ user: "labsite", owner: "other", domain: input.domain }] } });
   await expect(installWordpress(config, input)).rejects.toThrow("reseller-owned");
@@ -153,10 +153,11 @@ it("does not make Softaculous calls when the existing WHM token cannot create a 
   await expect(new SoftaculousClient(sessionConfig).installations()).rejects.toThrow("session creation failed");
   expect(fetch).not.toHaveBeenCalled();
 });
-it("WHM session creation stays restricted and sends only the WHM token to WHM", async () => {
+it("WHM session creation verifies ownership and sends only the WHM token to WHM", async () => {
+  account();
   const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ metadata: { result: 1 }, data: sessionData() })));
   const client = new WhmClient(sessionConfig);
-  await expect(client.createCpanelSession("otheruser")).rejects.toThrow("restricted");
+  await expect(client.createCpanelSession("otheruser")).rejects.toThrow("reseller-owned");
   expect(fetch).not.toHaveBeenCalled();
   await client.createCpanelSession("labsite");
   expect(String(fetch.mock.calls[0][0])).toContain("/json-api/create_user_session?");
