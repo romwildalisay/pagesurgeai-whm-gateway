@@ -69,7 +69,7 @@ it("uses cPanel Basic authentication only in headers, with HTTPS and redirects d
   const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ iscripts: {} })));
   await new SoftaculousClient(config).installations();
   const [url, options] = fetch.mock.calls[0];
-  expect(String(url)).toBe("https://whm.example.test:2083/frontend/jupiter/softaculous/index.live.php?api=json&act=installations");
+  expect(String(url)).toBe("https://whm.example.test:2083/frontend/jupiter/softaculous/index.live.php?api=json&act=home");
   expect(String(url)).not.toContain(config.CPANEL_PASSWORD);
   expect(options?.redirect).toBe("error");
   expect((options?.headers as any).Authorization).toBe(`Basic ${Buffer.from("labsite:cpanel-private-secret").toString("base64")}`);
@@ -127,7 +127,7 @@ it("uses the existing WHM token for a temporary test-account session without cPa
   await client.installations();
   expect(session).toHaveBeenCalledOnce();
   expect(session).toHaveBeenCalledWith("labsite");
-  expect(String(fetch.mock.calls[2][0])).toBe("https://whm.example.test:2083/cpsess123456/frontend/jupiter/softaculous/index.live.php?api=json&act=installations");
+  expect(String(fetch.mock.calls[2][0])).toBe("https://whm.example.test:2083/cpsess123456/frontend/jupiter/softaculous/index.live.php?api=json&act=home");
   expect(fetch.mock.calls[0][1]?.redirect).toBe("manual");
   expect(fetch.mock.calls[2][1]?.headers).toEqual({ Cookie: "cpsession=private-cookie", Accept: "application/json" });
 });

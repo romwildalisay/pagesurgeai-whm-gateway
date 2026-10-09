@@ -32,7 +32,7 @@ export function createMcpServer(config: Config, access: { canCreate: boolean; ca
   const whm = new WhmClient(config);
   const securitySchemes = [{ type: "oauth2" as const, scopes: [config.OAUTH_SCOPE] }];
   const server = new McpServer(
-    { name: "pagesurgeai-whm-gateway", version: "0.4.4" },
+    { name: "pagesurgeai-whm-gateway", version: "0.4.5" },
     { instructions: "Inspect hosting, create accounts with creation permission, and install WordPress through Softaculous only on the configured test account with WordPress permission. No account modification, suspension, restoration, deletion, shell access, or WordPress MCP plugin installation is implemented." }
   );
 
