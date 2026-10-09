@@ -29,10 +29,10 @@ async function connectedClient() {
 }
 
 describe("PageSurgeAI WHM Gateway v0.4.0", () => {
-  it("denies WordPress installation without verified installation access", async () => {
+  it.each(["hosting_install_wordpress", "hosting_configure_wordpress_email"])("denies %s without verified WordPress access", async toolName => {
     const read = vi.spyOn(WhmClient.prototype, "call");
     const { client, server } = await connectedClient();
-    const response = await client.callTool({ name: "hosting_install_wordpress", arguments: {
+    const response = await client.callTool({ name: toolName, arguments: {
       username: "labsite", domain: "lab.example.com", site_title: "Lab", admin_email: "owner@example.com", confirm: true
     } });
     expect(response.isError).toBe(true);
@@ -56,10 +56,11 @@ describe("PageSurgeAI WHM Gateway v0.4.0", () => {
     await client.close();
     await server.close();
   });
-  it("advertises five read-only tools and two scoped write tools", async () => {
+  it("advertises five read-only tools and three scoped write tools", async () => {
     const { client, server } = await connectedClient();
     const response = await client.listTools();
     expect(response.tools.map((t) => t.name).sort()).toEqual([
+      "hosting_configure_wordpress_email",
       "hosting_create_account",
       "hosting_get_account",
       "hosting_get_usage",
@@ -68,7 +69,7 @@ describe("PageSurgeAI WHM Gateway v0.4.0", () => {
       "hosting_list_accounts",
       "hosting_list_packages"
     ]);
-    for (const tool of response.tools.filter((t) => !["hosting_create_account", "hosting_install_wordpress"].includes(t.name))) {
+    for (const tool of response.tools.filter((t) => !["hosting_create_account", "hosting_install_wordpress", "hosting_configure_wordpress_email"].includes(t.name))) {
       expect(tool.annotations?.readOnlyHint).toBe(true);
       expect(tool.annotations?.destructiveHint).toBe(false);
       expect(tool._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["whm:read"] }]);

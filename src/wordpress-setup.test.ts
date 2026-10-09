@@ -1,11 +1,11 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { installWordpress, SoftaculousClient, wordpressStatus } from "./wordpress-setup.js";
+import { configureWordpressEmail, installWordpress, SoftaculousClient, wordpressStatus } from "./wordpress-setup.js";
 import { WhmClient } from "./whm-client.js";
 import type { Config } from "./config.js";
 
 const config: Config = { WHM_BASE_URL: "https://whm.example.test:2087", WHM_USERNAME: "reseller", WHM_API_TOKEN: "a".repeat(32), PUBLIC_BASE_URL: "https://gateway.test", OAUTH_ISSUER: "https://auth.test", OAUTH_AUDIENCE: "https://gateway.test/mcp", OAUTH_SCOPE: "whm:read", PORT: 3000, WHM_TIMEOUT_MS: 15000, CPANEL_USERNAME: "labsite", CPANEL_AUTH_MODE: "password", CPANEL_PASSWORD: "cpanel-private-secret" };
 const input = { username: "labsite", domain: "lab.example.com", site_title: "Lab", admin_email: "owner@example.com", confirm: true as const };
-function account() { return vi.spyOn(WhmClient.prototype, "call").mockResolvedValue({ data: { acct: [{ user: "labsite", owner: "reseller", domain: input.domain, suspended: 0 }] } }); }
+function account() { return vi.spyOn(WhmClient.prototype, "call").mockResolvedValue({ data: { acct: [{ user: "labsite", owner: "reseller", email: "account@example.com", domain: input.domain, suspended: 0 }] } }); }
 afterEach(() => vi.restoreAllMocks());
 
 it("requires explicit confirmation and restricts the account, domain, and owner before any installer write", async () => {
@@ -45,12 +45,16 @@ it("does not reinstall WordPress already listed on this domain", async () => {
 it("verifies HTTPS and posts only WordPress install fields without enabling overwrite", async () => {
   account();
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 200 }));
-  const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValueOnce({ installations: {} }).mockResolvedValueOnce({ done: true, __settings: { admin_pass: "raw-secret" } });
+  const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValueOnce({ installations: {} }).mockResolvedValueOnce({ done: true }).mockResolvedValueOnce({ done: true, __settings: { admin_pass: "raw-secret" } });
   const result = await installWordpress(config, input);
-  const fields = api.mock.calls[1][1]!;
+  const fields = api.mock.calls[2][1]!;
   expect(fields.get("softproto")).toBe("3");
   expect(fields.get("softdirectory")).toBe("");
   expect(fields.has("overwrite_existing")).toBe(false);
+  expect(fields.has("noemail")).toBe(false);
+  expect(api.mock.calls[1][0]).toBe("email");
+  expect(api.mock.calls[1][1]?.get("email")).toBe("account@example.com");
+  expect(result).toMatchObject({ email: { recipient: "account@example.com", status: "requested", inbox_delivery: "not_verified" } });
   expect(fields.get("admin_pass")!.length).toBeGreaterThan(32);
   expect(JSON.stringify(result)).not.toContain(fields.get("admin_pass"));
   expect(JSON.stringify(result)).not.toContain("raw-secret");
@@ -90,7 +94,7 @@ it("reports write uncertainty without retrying or leaking the thrown error", asy
 it.each([{ done: false }, { done: true, setupcontinue: "more" }, { error: ["secret"] }])("does not claim success from an unsuccessful or partial installation response", async (body) => {
   account();
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(""));
-  vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValueOnce({ installations: {} }).mockResolvedValueOnce(body);
+  vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValueOnce({ installations: {} }).mockResolvedValueOnce({ done: true }).mockResolvedValueOnce(body);
   await expect(installWordpress(config, input)).rejects.toThrow();
 });
 
@@ -180,12 +184,36 @@ it("does not confuse Softaculous software catalog entries with installation inve
 
 it("uses HTTP only for the explicitly authorized temporary test domain while keeping installer requests private", async () => {
   const domain = "mature-yellow-fish.104-219-248-4.cpanel.site";
-  vi.spyOn(WhmClient.prototype, "call").mockResolvedValue({ data: { acct: [{ user: "labsite", owner: "reseller", domain, suspended: 0 }] } });
+  vi.spyOn(WhmClient.prototype, "call").mockResolvedValue({ data: { acct: [{ user: "labsite", owner: "reseller", email: "account@example.com", domain, suspended: 0 }] } });
   const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(""));
-  const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValueOnce({ installations: {} }).mockResolvedValueOnce({ done: true });
+  const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValueOnce({ installations: {} }).mockResolvedValueOnce({ done: true }).mockResolvedValueOnce({ done: true });
   const result = await installWordpress(config, { ...input, domain });
   expect(String(fetch.mock.calls[0][0])).toBe(`http://${domain}/`);
   expect(fetch.mock.calls[0][1]?.headers).toBeUndefined();
-  expect(api.mock.calls[1][1]?.get("softproto")).toBe("1");
+  expect(api.mock.calls[2][1]?.get("softproto")).toBe("1");
   expect(result).toMatchObject({ status: "installed", site_url: `http://${domain}/`, admin_url: `http://${domain}/wp-admin/` });
+});
+
+it("configures email only to the verified hosting contact without resetting an existing site's password", async () => {
+  account();
+  const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValue({ done: true, secret: "private" });
+  const result = await configureWordpressEmail(config, "labsite");
+  expect(api).toHaveBeenCalledOnce();
+  expect(api.mock.calls[0][0]).toBe("email");
+  expect(api.mock.calls[0][1]?.get("email")).toBe("account@example.com");
+  expect(result).toMatchObject({ status: "configured", existing_credentials_sent: false, recipient: "account@example.com" });
+  expect(JSON.stringify(result)).not.toContain("private");
+});
+it("blocks credential email setup when the contact address is invalid", async () => {
+  account().mockResolvedValue({ data: { acct: [{ user: "labsite", owner: "reseller", email: "bad\r\nBcc:third@example.com" }] } });
+  const api = vi.spyOn(SoftaculousClient.prototype, "request");
+  await expect(configureWordpressEmail(config, "labsite")).rejects.toThrow("valid contact email");
+  expect(api).not.toHaveBeenCalled();
+});
+it("does not install when Softaculous rejects email configuration", async () => {
+  account();
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(""));
+  const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValueOnce({ installations: {} }).mockResolvedValueOnce({ error: ["private"] });
+  await expect(installWordpress(config, input)).rejects.toThrow("email settings were not confirmed");
+  expect(api.mock.calls.map(c => c[0])).toEqual(["installations", "email"]);
 });

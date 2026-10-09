@@ -26,12 +26,12 @@ async function endpoint(verifier?: Parameters<typeof createGatewayApp>[1]) {
 }
 
 describe("HTTP OAuth boundary", () => {
-  it("requires a separate WordPress permission before installation", async () => {
+  it.each(["hosting_install_wordpress", "hosting_configure_wordpress_email"])("requires WordPress permission for %s", async (toolName) => {
     const fetchSpy = vi.spyOn(WhmClient.prototype, "call");
     const verify = vi.fn(async () => ({ ok: false as const, reason: "insufficient_scope" as const }));
     const base = await endpoint(verify);
     const response = await fetch(base + "/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
-      jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "hosting_install_wordpress", arguments: {} }
+      jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: toolName, arguments: {} }
     }) });
     expect(response.status).toBe(403);
     expect(verify).toHaveBeenCalledWith(undefined, ["whm:read", "whm:wordpress"]);

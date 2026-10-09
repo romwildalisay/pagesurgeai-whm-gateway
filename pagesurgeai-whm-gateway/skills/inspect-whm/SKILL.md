@@ -40,3 +40,11 @@ Installation requires `whm:read whm:wordpress`, the existing backend WHM reselle
 Never disable TLS verification, overwrite files, reinstall an existing site, or retry an uncertain write blindly. Inspect WordPress Manager and inventory after timeout or partial success. An empty Softaculous inventory does not prove that no unmanaged website files exist.
 
 Report `installed` only after the API confirms completion and verify status afterward. Report `already_exists` as no changes. Use the WordPress Manager Login button for admin access; generated passwords remain private. The WordPress MCP plugin is a separate next step and is not installed by this tool.
+
+## WordPress installation emails
+
+Use `hosting_configure_wordpress_email` with the exact configured test-account username and `confirm: true` only when email setup is requested. Require `whm:read whm:wordpress`. The server verifies ownership and uses the current WHM contact email; never substitute an arbitrary recipient. This configures Softaculous installation notifications, not an email of an existing password.
+
+New WordPress installations automatically configure installation email delivery to the verified hosting contact before installing. Report the email request separately from inbox receipt. Password inclusion requires Softaculous Email settings > Email password in plain text; do not claim the password was included or delivered without evidence. The user must enable that setting in Softaculous; the gateway does not guess an undocumented API field.
+
+Never reinstall a site, retrieve stored passwords, reset a password, or send a credential message merely to test this setup. If the user requests existing-site credentials, explain that this function cannot resend the original password. Keep all credentials out of chat. Inspect inbox receipt only when a future explicitly authorized installation sends its email.

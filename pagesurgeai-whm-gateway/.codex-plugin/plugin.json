@@ -16,7 +16,7 @@
   },
   "apps": "./.app.json",
   "name": "pagesurgeai-whm-gateway",
-  "version": "0.4.7",
+  "version": "0.5.0",
   "description": "Inspect WHM hosting, create accounts, and set up WordPress through a restricted Softaculous test adapter.",
   "author": {
     "name": "PageSurgeAI"

@@ -47,7 +47,7 @@ export class WhmClient {
         headers: {
           Authorization: `whm ${this.config.WHM_USERNAME}:${this.config.WHM_API_TOKEN}`,
           Accept: "application/json",
-          "User-Agent": "PageSurgeAI-WHM-Gateway/0.4.7"
+          "User-Agent": "PageSurgeAI-WHM-Gateway/0.5.0"
         },
         signal: controller.signal
       });

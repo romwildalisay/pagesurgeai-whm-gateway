@@ -78,14 +78,14 @@ export class SoftaculousClient {
       return "The read-only UAPI response did not confirm successful authentication.";
     } catch { return "The read-only UAPI authentication check could not be completed securely."; }
   }
-  async request(action: "installations" | "software", params?: URLSearchParams): Promise<any> {
+  async request(action: "installations" | "software" | "email", params?: URLSearchParams): Promise<any> {
     const url = new URL(this.config.WHM_BASE_URL);
     url.port = "2083";
     url.pathname = "/frontend/jupiter/softaculous/index.live.php";
     url.username = ""; url.password = ""; url.search = ""; url.hash = "";
     url.searchParams.set("api", "json"); url.searchParams.set("act", action);
     if (action === "software") url.searchParams.set("soft", "26");
-    const writing = action === "software";
+    const writing = action === "software" || (action === "email" && params !== undefined);
     const passwordMode = this.config.CPANEL_AUTH_MODE === "password";
     let headers: Record<string, string>;
     if (passwordMode) {
@@ -104,12 +104,14 @@ export class SoftaculousClient {
         const diagnostic = writing ? "No installation was confirmed. Check inventory before retrying." : passwordMode ? await this.authenticationDiagnostic(url.origin) : "The WHM session was rejected by the Softaculous endpoint. No installation was started.";
         throw new Error(`cPanel rejected Softaculous authentication with HTTP ${response.status} at ${url.origin} for ${this.config.CPANEL_USERNAME}. ${diagnostic} Reconnecting Auth0 does not fix this upstream rejection.`);
       }
+      if (!response.ok && action === "email") throw new Error("Softaculous email settings could not be confirmed. No installation was started.");
       if (!response.ok) throw new Error(writing ? "WordPress installation could not be confirmed. Inspect Softaculous before retrying." : "Softaculous inventory is unavailable.");
       const body = await response.json();
       if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Softaculous response was not recognized. Inspect WordPress Manager before retrying.");
       return body;
     } catch (error) {
-      if (error instanceof Error && /^(cPanel rejected|WordPress installation could|Softaculous inventory|Softaculous response)/.test(error.message)) throw error;
+      if (error instanceof Error && /^(cPanel rejected|WordPress installation could|Softaculous inventory|Softaculous response|Softaculous email)/.test(error.message)) throw error;
+      if (action === "email") throw new Error("Softaculous email settings could not be confirmed. Inspect email settings before retrying; no installation was started.");
       throw new Error(writing ? "WordPress installation could not be confirmed; it may have completed. Inspect Softaculous before retrying." : "Cannot read Softaculous securely. Verify HTTPS on the cPanel server and test account credentials.");
     }
   }
@@ -165,6 +167,21 @@ export async function wordpressStatus(config: Config, username: string) {
   return { username, domain, installations, count: installations.length, source: "Softaculous inventory; unmanaged WordPress installations may not be listed" };
 }
 
+async function configureInstallationEmail(client: SoftaculousClient, contactEmail: unknown) {
+  const email = z.string().trim().email().max(254).safeParse(contactEmail);
+  if (!email.success) throw new Error("The hosting account has no valid contact email. Set its contact email in WHM before requesting credential delivery; no installation was started.");
+  const body = await client.request("email", new URLSearchParams({ editemailsettings: "1", email: email.data, ins_email: "1" }));
+  if (hasErrors(body.error) || ![true, 1, "1"].includes(body.done)) throw new Error("Softaculous installation-email settings were not confirmed. Check Softaculous email settings; no installation was started.");
+  return email.data;
+}
+
+export async function configureWordpressEmail(config: Config, username: string) {
+  const account = await verifiedAccount(config, username);
+  const recipient = await configureInstallationEmail(new SoftaculousClient(config), account.email);
+  return { status: "configured", username, recipient, provider: "Softaculous", existing_credentials_sent: false,
+    password_inclusion: "Requires Softaculous Email settings > Email password in plain text", inbox_delivery: "not_verified" };
+}
+
 export async function installWordpress(config: Config, input: InstallRequest) {
   const request = schema.parse(input);
   const account = await verifiedAccount(config, request.username);
@@ -184,10 +201,11 @@ export async function installWordpress(config: Config, input: InstallRequest) {
       if (target.protocol !== `${protocol}:` || target.hostname !== request.domain) throw new Error("Unexpected redirect");
     }
   } catch { throw new Error(`The test domain's ${protocol.toUpperCase()} could not be verified. Fix DNS/connectivity${protocol === "https" ? "/SSL" : ""} before installation; no installation was started.`); }
+  const recipient = await configureInstallationEmail(client, account.email);
   const password = `Aa9!${randomBytes(32).toString("base64url")}`;
   const params = new URLSearchParams({ softsubmit: "1", softdomain: request.domain, softdirectory: "", softproto: protocol === "http" ? "1" : "3",
     softdb: `wp${randomBytes(4).toString("hex")}`, admin_username: "pagesurgeadmin", admin_pass: password,
-    admin_email: request.admin_email, language: "en", site_name: request.site_title, site_desc: "PageSurgeAI test site", noemail: "1" });
+    admin_email: request.admin_email, language: "en", site_name: request.site_title, site_desc: "PageSurgeAI test site" });
   // Never set overwrite_existing. Softaculous must retain its existing-file
   // protection, including installations it has not imported into inventory.
   const body = await client.request("software", params);
@@ -196,5 +214,6 @@ export async function installWordpress(config: Config, input: InstallRequest) {
   // Ignore raw API data, which may contain admin and database passwords.
   return { status: "installed", username: request.username, domain: request.domain, site_url: `${protocol}://${request.domain}/`,
     admin_url: `${protocol}://${request.domain}/wp-admin/`, admin_username: "pagesurgeadmin", mcp_plugin_installed: false,
-    credential_delivery: "Use the Login button in WordPress Manager by Softaculous. No password is returned in chat." };
+    credential_delivery: "Installation email requested through Softaculous. Password inclusion depends on its Email password in plain text setting. Use WordPress Manager Login if needed. No password is returned in chat.",
+    email: { recipient, status: "requested", inbox_delivery: "not_verified", password_inclusion: "depends_on_softaculous_email_setting" } };
 }
