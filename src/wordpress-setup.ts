@@ -172,17 +172,20 @@ export async function installWordpress(config: Config, input: InstallRequest) {
   const client = new SoftaculousClient(config);
   const existing = installationForDomain(await client.installations(), request.domain);
   if (existing.length) return { status: "already_exists", username: request.username, domain: request.domain, installations: existing };
-  // Verify public HTTPS without cPanel credentials. Do not bypass certificate
+  // Explicitly authorized HTTP exception for this isolated test domain only.
+  // Control-panel authentication and installer requests always retain HTTPS.
+  const protocol = request.domain === "mature-yellow-fish.104-219-248-4.cpanel.site" ? "http" : "https";
+  // Verify public reachability without cPanel credentials. Do not bypass certificate
   // validation or follow redirects to an unrelated site.
   try {
-    const response = await fetch(`https://${request.domain}/`, { method: "HEAD", redirect: "manual", signal: AbortSignal.timeout(10000) });
+    const response = await fetch(`${protocol}://${request.domain}/`, { method: "HEAD", redirect: "manual", signal: AbortSignal.timeout(10000) });
     if (response.status >= 300 && response.status < 400) {
-      const target = new URL(response.headers.get("location") ?? "", `https://${request.domain}`);
-      if (target.protocol !== "https:" || target.hostname !== request.domain) throw new Error("Unexpected redirect");
+      const target = new URL(response.headers.get("location") ?? "", `${protocol}://${request.domain}`);
+      if (target.protocol !== `${protocol}:` || target.hostname !== request.domain) throw new Error("Unexpected redirect");
     }
-  } catch { throw new Error("The test domain's HTTPS could not be verified. Fix DNS/SSL before installation; no installation was started."); }
+  } catch { throw new Error(`The test domain's ${protocol.toUpperCase()} could not be verified. Fix DNS/connectivity${protocol === "https" ? "/SSL" : ""} before installation; no installation was started.`); }
   const password = `Aa9!${randomBytes(32).toString("base64url")}`;
-  const params = new URLSearchParams({ softsubmit: "1", softdomain: request.domain, softdirectory: "", softproto: "3",
+  const params = new URLSearchParams({ softsubmit: "1", softdomain: request.domain, softdirectory: "", softproto: protocol === "http" ? "1" : "3",
     softdb: `wp${randomBytes(4).toString("hex")}`, admin_username: "pagesurgeadmin", admin_pass: password,
     admin_email: request.admin_email, language: "en", site_name: request.site_title, site_desc: "PageSurgeAI test site", noemail: "1" });
   // Never set overwrite_existing. Softaculous must retain its existing-file
@@ -191,7 +194,7 @@ export async function installWordpress(config: Config, input: InstallRequest) {
   if (hasErrors(body.error)) throw new Error("Softaculous reported an installation error. Inspect WordPress Manager for its details and check inventory before retrying. Existing-file protection remains enabled.");
   if (![true, 1, "1"].includes(body.done) || body.setupcontinue) throw new Error("WordPress installation was not confirmed complete. Inspect WordPress Manager before retrying.");
   // Ignore raw API data, which may contain admin and database passwords.
-  return { status: "installed", username: request.username, domain: request.domain, site_url: `https://${request.domain}/`,
-    admin_url: `https://${request.domain}/wp-admin/`, admin_username: "pagesurgeadmin", mcp_plugin_installed: false,
+  return { status: "installed", username: request.username, domain: request.domain, site_url: `${protocol}://${request.domain}/`,
+    admin_url: `${protocol}://${request.domain}/wp-admin/`, admin_username: "pagesurgeadmin", mcp_plugin_installed: false,
     credential_delivery: "Use the Login button in WordPress Manager by Softaculous. No password is returned in chat." };
 }

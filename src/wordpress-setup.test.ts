@@ -177,3 +177,15 @@ it("does not confuse Softaculous software catalog entries with installation inve
   vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValue({ iscripts: { "26": { name: "WordPress" } } });
   await expect(new SoftaculousClient(config).installations()).rejects.toThrow("inventory could not be verified");
 });
+
+it("uses HTTP only for the explicitly authorized temporary test domain while keeping installer requests private", async () => {
+  const domain = "mature-yellow-fish.104-219-248-4.cpanel.site";
+  vi.spyOn(WhmClient.prototype, "call").mockResolvedValue({ data: { acct: [{ user: "labsite", owner: "reseller", domain, suspended: 0 }] } });
+  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(""));
+  const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValueOnce({ installations: {} }).mockResolvedValueOnce({ done: true });
+  const result = await installWordpress(config, { ...input, domain });
+  expect(String(fetch.mock.calls[0][0])).toBe(`http://${domain}/`);
+  expect(fetch.mock.calls[0][1]?.headers).toBeUndefined();
+  expect(api.mock.calls[1][1]?.get("softproto")).toBe("1");
+  expect(result).toMatchObject({ status: "installed", site_url: `http://${domain}/`, admin_url: `http://${domain}/wp-admin/` });
+});

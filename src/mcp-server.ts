@@ -32,7 +32,7 @@ export function createMcpServer(config: Config, access: { canCreate: boolean; ca
   const whm = new WhmClient(config);
   const securitySchemes = [{ type: "oauth2" as const, scopes: [config.OAUTH_SCOPE] }];
   const server = new McpServer(
-    { name: "pagesurgeai-whm-gateway", version: "0.4.6" },
+    { name: "pagesurgeai-whm-gateway", version: "0.4.7" },
     { instructions: "Inspect hosting, create accounts with creation permission, and install WordPress through Softaculous only on the configured test account with WordPress permission. No account modification, suspension, restoration, deletion, shell access, or WordPress MCP plugin installation is implemented." }
   );
 
@@ -116,7 +116,7 @@ export function createMcpServer(config: Config, access: { canCreate: boolean; ca
 
   server.registerTool("hosting_install_wordpress", {
     title: "Install WordPress on test account",
-    description: "Install WordPress at the HTTPS root of the configured test account's primary domain through Softaculous. Requires whm:read and whm:wordpress plus WHM reseller session access to the configured test account. Set confirm=true only when the user requests installation on this domain. Never overwrites existing files; existing installations are returned without changes. Admin password is generated privately; use Softaculous Login. On uncertain results inspect WordPress Manager before retrying. Does not install the WordPress MCP plugin.",
+    description: "Install WordPress at the root of the configured test account's primary domain through Softaculous. HTTPS is required except for the explicitly authorized mature-yellow-fish.104-219-248-4.cpanel.site HTTP test. Requires whm:read and whm:wordpress plus WHM reseller session access to the configured test account. Set confirm=true only when the user requests installation on this domain. Never overwrites existing files; existing installations are returned without changes. Admin password is generated privately; use Softaculous Login. On uncertain results inspect WordPress Manager before retrying. Does not install the WordPress MCP plugin.",
     inputSchema: wordpressInput, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     _meta: { securitySchemes: [{ type: "oauth2", scopes: [config.OAUTH_SCOPE, WORDPRESS_SCOPE] }] }
   }, async (input) => {

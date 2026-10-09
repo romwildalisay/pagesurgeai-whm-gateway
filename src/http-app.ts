@@ -15,7 +15,7 @@ export function createGatewayApp(config: Config, verifier?: (value: string | und
   const resourceMetadataUrl = `${config.PUBLIC_BASE_URL}/.well-known/oauth-protected-resource/mcp`;
   const authChallenge = `Bearer resource_metadata="${resourceMetadataUrl}", scope="${config.OAUTH_SCOPE}"`;
 
-  app.get("/health", (_req, res) => res.json({ status: "ok", name: "pagesurgeai-whm-gateway", version: "0.4.6", mode: "read-create-and-wordpress", auth: "oauth2", checks: { process: "ok", oauth_link: "not_checked", whm: "not_checked", wordpress: "not_checked" } }));
+  app.get("/health", (_req, res) => res.json({ status: "ok", name: "pagesurgeai-whm-gateway", version: "0.4.7", mode: "read-create-and-wordpress", auth: "oauth2", checks: { process: "ok", oauth_link: "not_checked", whm: "not_checked", wordpress: "not_checked" } }));
 
   app.get(["/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp"], (_req, res) => res.json({
     resource: `${config.PUBLIC_BASE_URL}/mcp`,
