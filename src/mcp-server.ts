@@ -2,6 +2,7 @@ import { createHostingAccount, creationInput, CREATE_SCOPE } from "./account-cre
 import { configureWordpressEmail, installWordpress, wordpressStatus, wordpressInput, WORDPRESS_SCOPE } from "./wordpress-setup.js";
 import { setupWordpressMcp, wordpressRead, wordpressWrite, wordpressReads, wordpressWrites, wordpressAccountInput, wordpressParameters } from "./wordpress-mcp.js";
 import { DELETE_SCOPE, prepareDestructiveAction, destructivePlanInput, destructiveExecuteInput, deleteHostingAccount, deleteWordpress, reinstallWordpress } from "./destructive-actions.js";
+import { BANDWIDTH_SCOPE, SSL_SCOPE, accountTargetInput, bandwidthInput, sslArchiveInput, getBandwidth, setAccountBandwidth, validateAccountSslZip, installAccountSslZip, getAccountSslStatus } from "./account-management.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Config } from "./config.js";
@@ -30,11 +31,11 @@ function accountView(a: any) {
   };
 }
 
-export function createMcpServer(config: Config, access: { canCreate: boolean; canInstall?: boolean; canDelete?: boolean } = { canCreate: false }): McpServer {
+export function createMcpServer(config: Config, access: { canCreate: boolean; canInstall?: boolean; canDelete?: boolean; canBandwidth?: boolean; canSsl?: boolean } = { canCreate: false }): McpServer {
   const whm = new WhmClient(config);
   const securitySchemes = [{ type: "oauth2" as const, scopes: [config.OAUTH_SCOPE] }];
   const server = new McpServer(
-    { name: "pagesurgeai-whm-gateway", version: "0.7.0" },
+    { name: "pagesurgeai-whm-gateway", version: "0.8.0" },
     { instructions: "Inspect hosting, create accounts with creation permission, and manage WordPress only on the verified reseller-owned accounts. Install the user's WordPress MCP Manager through hosting_setup_wordpress_mcp. Bearer authentication stays private in this gateway and requires valid WordPress HTTPS. Read site identity and current content before writes. Set confirm=true only for user-authorized actions. Do not retry uncertain writes. Destructive hosting operations require a fresh preview, exact target approval and whm:delete. No shell access is implemented." }
   );
 
@@ -199,5 +200,42 @@ export function createMcpServer(config: Config, access: { canCreate: boolean; ca
     const state = await reinstallWordpress(config, input);
     return result(state, `WordPress reinstall: ${state.status}. Never retry deletion automatically.`);
   });
+  server.registerTool("hosting_get_bandwidth", {
+    title: "Inspect monthly bandwidth limit and usage",
+    description: "Read exact account ownership and primary domain, then current-month WHM showbw inventory. Returns limit in MB and usage, including explicit unlimited. Requires WHM View Account Bandwidth Usage permission. Makes no changes; use before and after bandwidth adjustments.",
+    inputSchema: accountTargetInput, annotations, _meta: { securitySchemes }
+  }, async input => result(await getBandwidth(config, input), "Read monthly bandwidth limit and usage; no changes made."));
+  server.registerTool("hosting_set_bandwidth", {
+    title: "Adjust one account's monthly bandwidth limit",
+    description: "Set one verified account's monthly bandwidth quota to explicit integer limit_mb or unlimited. 1 GB in prompts means 1024 MB; 0 is rejected to avoid accidental unlimited access. Requires whm:read whm:bandwidth and WHM Bandwidth Limit Modification permission. Supply exact username/primary domain and confirm=true only for the requested adjustment. Read usage first and warn if reducing below current usage. Does not edit shared packages or unsuspend accounts. Verifies read-back; never retry uncertain writes automatically.",
+    inputSchema: bandwidthInput, annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    _meta: { securitySchemes: [{ type: "oauth2", scopes: [config.OAUTH_SCOPE, BANDWIDTH_SCOPE] }] }
+  }, async input => {
+    if (!access.canBandwidth) throw new Error("Bandwidth changes require whm:bandwidth. Grant the API permission and reauthorize the existing Web connection.");
+    const state = await setAccountBandwidth(config, input); return result(state, `Bandwidth adjustment: ${state.status}.`);
+  });
+  server.registerTool("hosting_validate_ssl_zip", {
+    title: "Validate an attached SSL ZIP without installation",
+    description: "Verify account/domain ownership and an attached ZIP encoded as zip_base64. Accepts PEM certificate, exactly one matching unencrypted RSA/ECDSA private key, and intermediate CA certificates. Bounded archive parsing; reject unsafe paths, encryption, expiry, mismatched domains/keys and untrusted TLS-server chains. Requires whm:read whm:ssl. Returns safe certificate metadata and replacement impact only; never returns keys or the ZIP. Makes no SSL changes. Validation does not purchase/activate a certificate or check revocation.",
+    inputSchema: sslArchiveInput, annotations,
+    _meta: { securitySchemes: [{ type: "oauth2", scopes: [config.OAUTH_SCOPE, SSL_SCOPE] }] }
+  }, async input => {
+    if (!access.canSsl) throw new Error("SSL ZIP validation requires whm:ssl. Reauthorize the existing Web connection.");
+    return result(await validateAccountSslZip(config, input), "SSL ZIP validated; no SSL changes made. Installation may replace the certificate for the domain and its shared aliases.");
+  });
+  server.registerTool("hosting_install_ssl_zip", {
+    title: "Install SSL from an attached certificate ZIP",
+    description: "Install a user-requested certificate ZIP on an exact verified account domain. Supply zip_base64 of the attachment and confirm=true only for that domain-specific installation. Revalidates the archive, matching key, domain, dates, public CA chain and ownership; posts secrets privately to WHM over verified HTTPS. Requires whm:read whm:ssl and WHM SSL Site Management permission. Replaces the domain's Apache-vhost certificate and may affect shared aliases. No purchase, renewal, DNS changes or WordPress URL changes. Reports WHM installation separately from public TLS verification. Never return private keys/raw responses or retry uncertain writes.",
+    inputSchema: { ...sslArchiveInput, confirm: z.literal(true) }, annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    _meta: { securitySchemes: [{ type: "oauth2", scopes: [config.OAUTH_SCOPE, SSL_SCOPE] }] }
+  }, async input => {
+    if (!access.canSsl) throw new Error("SSL installation requires whm:ssl. Grant the API permission and reauthorize the existing Web connection.");
+    const state = await installAccountSslZip(config, input); return result(state, "WHM confirmed SSL installation. Check public_tls for independent HTTPS verification; no private key returned.");
+  });
+  server.registerTool("hosting_get_ssl_status", {
+    title: "Check public domain HTTPS certificate",
+    description: "Verify account/domain ownership and attempt a public TLS connection with certificate verification enabled. Returns safe fingerprint/expiry and HTTPS status. Private network addresses are excluded. A CDN may serve a different certificate. Makes no changes and does not prove WordPress/MCP authentication.",
+    inputSchema: accountTargetInput, annotations, _meta: { securitySchemes }
+  }, async input => result(await getAccountSslStatus(config, input), "Public HTTPS check completed; inspect https_verified."));
   return server;
 }

@@ -11,7 +11,7 @@ export class WhmClient {
   constructor(private readonly config: Config) {}
 
   async call(functionName: string, params: Record<string, string | number> = {}): Promise<any> {
-    const allowedReadFunctions = new Set(["listaccts", "accountsummary", "listpkgs"]);
+    const allowedReadFunctions = new Set(["listaccts", "accountsummary", "listpkgs", "showbw", "getdomainowner"]);
     if (!allowedReadFunctions.has(functionName)) throw new WhmError("WHM function is not allowed in read-only mode");
     if (!/^[a-z][a-z0-9_]*$/i.test(functionName)) throw new WhmError("Invalid WHM function name");
     return this.request(functionName, params, false);
@@ -42,6 +42,21 @@ export class WhmClient {
     } catch { throw new WhmError("Account deletion was not confirmed. Check WHM inventory before any further action; do not retry automatically. Verify Terminate Accounts (kill-acct) permission if WHM rejected the request."); }
   }
 
+  async setBandwidth(username: string, limit: number | "unlimited") {
+    try {
+      return await this.request("limitbw", { user: username, bwlimit: limit }, true);
+    } catch { throw new WhmError("Bandwidth change was not confirmed. Inspect hosting_get_bandwidth before retrying. Verify WHM Bandwidth Limit Modification (limit-bandwidth) permission and reseller resource limits; reconnecting Auth0 does not repair WHM permission failures."); }
+  }
+
+  async installSsl(username: string, domain: string, certificate: string, key: string, caBundle: string) {
+    try {
+      const response = await this.request("installssl", { domain, crt: certificate, key, ...(caBundle ? { cab: caBundle } : {}) }, true);
+      if (response?.data?.status !== 1 || response?.data?.domain !== domain || response?.data?.user !== username) throw new Error("Installation not confirmed");
+      // Drop every raw response field, including HTML and echoed private material.
+      return { confirmed: true };
+    } catch { throw new WhmError("SSL installation was not confirmed. Inspect the domain's certificate before retrying. Verify WHM SSL Site Management (ssl) permission. No private key or upstream response is returned."); }
+  }
+
   private async request(functionName: string, params: Record<string, string | number>, creating: boolean): Promise<any> {
     const url = new URL(`/json-api/${functionName}`, this.config.WHM_BASE_URL);
     url.searchParams.set("api.version", "1");
@@ -57,7 +72,7 @@ export class WhmClient {
         headers: {
           Authorization: `whm ${this.config.WHM_USERNAME}:${this.config.WHM_API_TOKEN}`,
           Accept: "application/json",
-          "User-Agent": "PageSurgeAI-WHM-Gateway/0.7.0"
+          "User-Agent": "PageSurgeAI-WHM-Gateway/0.8.0"
         },
         signal: controller.signal
       });

@@ -45,7 +45,7 @@ The WHM token belongs only in Render's environment. Never place credentials in r
 | `OAUTH_SCOPE` | Base read permission, default `whm:read`; creation also requires `whm:create` |
 | `WHM_TIMEOUT_MS` | WHM request timeout, default `15000` |
 
-Run `npm ci`, `npm run build`, and `npm test` before deployment. Tests mock WHM writes and do not create hosting resources. `/health` reports version `0.5.0` and process status only; it does not test OAuth or WHM. Protected-resource metadata advertises all three scopes.
+Run `npm ci`, `npm run build`, and `npm test` before deployment. Tests mock WHM writes and do not create hosting resources. `/health` reports version `0.8.0`, process status and OpenSSL readiness; it does not test OAuth or WHM. Protected-resource metadata advertises all supported scopes.
 
 For deployment, see `BEGINNER-DEPLOYMENT.md`. Use `FRESH-START.md` only when recovering a deleted Auth0 client; enabling creation does not require deleting or recreating a working application.
 
@@ -106,3 +106,34 @@ Add whm:delete to the existing Auth0 API permissions and grant it to the authori
 No bulk deletion, forced permission changes or automatic retries are implemented. Ownership, account identity and installation inventory are revalidated; previews are consumed before destructive I/O and lost on restart. Report partial resets as removed_reinstall_not_confirmed. No live deletion was performed during deployment validation.
 
 Official API references: https://www.softaculous.com/docs/api/api/ (Remove an Installed Script), https://api.docs.cpanel.net/specifications/whm.openapi/account-management/accounts-removeacct and https://api.docs.cpanel.net/guides/guide-to-whm-plugins/guide-to-whm-plugins-acl-reference-chart.
+
+
+## Bandwidth and SSL ZIP tools (0.8.0)
+
+| Tool | OAuth scopes | Action |
+| --- | --- | --- |
+| hosting_get_bandwidth | whm:read | Exact-account monthly bandwidth inventory via showbw |
+| hosting_set_bandwidth | whm:read whm:bandwidth | One-account quota via limitbw; verified read-back |
+| hosting_get_ssl_status | whm:read | Public DNS/TLS check after account/domain verification |
+| hosting_validate_ssl_zip | whm:read whm:ssl | Validate attached base64 ZIP, no hosting writes |
+| hosting_install_ssl_zip | whm:read whm:ssl | Revalidate and install cert/key/chain via WHM installssl POST |
+
+Add and grant `whm:bandwidth` and `whm:ssl` to the existing Auth0 protected API, then reauthorize the existing Web connection and refresh tools. Existing read/create/WordPress scopes remain supported. No per-account Render credentials are required. These capabilities do not require whm:delete.
+
+WHM must permit Account Summary, domain owner lookup, View Account Bandwidth Usage (`show-bandwidth`), Bandwidth Limit Modification (`limit-bandwidth`), and SSL Site Management (`ssl`) as appropriate. Gateway scope grants do not grant WHM privileges. Do not rotate the existing WHM token or change permissions automatically.
+
+Bandwidth accepts positive integer `limit_mb` or explicit `unlimited` (zero is rejected). 1 GB in prompts means 1024 MB. Targets require an exact primary domain and verified account owner. Reductions below current usage, or unknown usage during a reduction, require explicitly authorized `allow_below_usage=true`. No package edits, usage resets or unsuspension. Package changes can subsequently overwrite the account limit. Report `change_not_verified` rather than retrying an uncertain write.
+
+For SSL, attach an unencrypted ZIP containing PEM certificate, exactly one matching RSA >=2048-bit or supported ECDSA private key, and required intermediate CA certificates. Optional CSR is ignored. The client supplies base64 of the actual ZIP in `zip_base64`; local paths and attachment URLs are not server-accessible. Do not print or persist private material. Limit: 256 KiB compressed, 32 entries, 128 KiB per entry, 512 KiB expanded. Stored and deflated ZIP entries only; no unsafe paths, duplicate entries, links, encrypted archives/keys, PFX/P12 or untrusted/self-signed certificates. Keys alone do not suffice.
+
+Validation checks SAN domain/key matching, dates and a complete TLS-server chain to Node's public roots. OpenSSL **3** must be installed in the Node runtime for path constraints/purpose/security-level validation; `/health` reports `checks.ssl_validator`. Only public certificates use temporary files; private keys remain in memory, with no logging or returned key/ZIP. No revocation checking is performed.
+
+Domain ownership includes WHM-verified addon/subdomains through getdomainowner. Installation may replace the certificate on its Apache virtual host, including shared aliases. It does not purchase, issue or renew SSL, change DNS, alter WordPress URLs or create redirects. WHM confirmation is separate from public TLS verification; public address pinning excludes private networks and a CDN may serve a different certificate. No automatic retry after uncertainty.
+
+Example prompts:
+- Show example.com's monthly bandwidth limit and usage without changes.
+- Set example.com's monthly bandwidth limit to 2 GB (2048 MB), keeping its package unchanged.
+- Validate the attached SSL ZIP for example.com without installing.
+- Install SSL for example.com from the attached ZIP and verify public HTTPS.
+
+Automated tests use offline certificate fixtures and mocked WHM writes. They do not prove reseller ACL availability or perform live account changes.

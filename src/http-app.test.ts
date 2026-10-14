@@ -26,6 +26,17 @@ async function endpoint(verifier?: Parameters<typeof createGatewayApp>[1]) {
 }
 
 describe("HTTP OAuth boundary", () => {
+  it.each([
+    ["hosting_set_bandwidth", "whm:bandwidth"],
+    ["hosting_validate_ssl_zip", "whm:ssl"],
+    ["hosting_install_ssl_zip", "whm:ssl"]
+  ])("requires new scope before %s reaches WHM", async (name, scope) => {
+    const read = vi.spyOn(WhmClient.prototype, "call");
+    const verify = vi.fn(async () => ({ ok: false as const, reason: "insufficient_scope" as const }));
+    const base = await endpoint(verify);
+    const response = await fetch(base + "/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: {} } }) });
+    expect(verify).toHaveBeenCalledWith(undefined, ["whm:read", scope]); expect(response.status).toBe(403); expect(read).not.toHaveBeenCalled();
+  });
   it.each(["hosting_delete_account", "hosting_delete_wordpress", "hosting_reinstall_wordpress"])("requires deletion scope before %s can reach hosting", async name => {
     const read = vi.spyOn(WhmClient.prototype, "call");
     const verify = vi.fn(async () => ({ ok: false as const, reason: "insufficient_scope" as const }));
@@ -105,13 +116,13 @@ describe("HTTP OAuth boundary", () => {
       const response = await fetch(base + path);
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ resource: config.OAUTH_AUDIENCE,
-        authorization_servers: ["https://tenant.example.test/"], scopes_supported: ["whm:read", "whm:create", "whm:wordpress", "whm:delete"] });
+        authorization_servers: ["https://tenant.example.test/"], scopes_supported: ["whm:read", "whm:create", "whm:wordpress", "whm:delete", "whm:bandwidth", "whm:ssl"] });
     }
   });
   it("does not confuse process health with completed OAuth or WHM checks", async () => {
     const base = await endpoint();
     const body = await (await fetch(base + "/health")).json();
-    expect(body.checks).toEqual({ process: "ok", oauth_link: "not_checked", whm: "not_checked", wordpress: "not_checked" });
+    expect(body.checks).toEqual({ process: "ok", oauth_link: "not_checked", whm: "not_checked", wordpress: "not_checked", ssl_validator: "ready" });
     expect(JSON.stringify(body)).not.toContain(config.WHM_API_TOKEN);
   });
   it.each(["missing_token", "invalid_token", "insufficient_scope"] as const)(

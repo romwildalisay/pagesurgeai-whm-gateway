@@ -29,6 +29,19 @@ async function connectedClient() {
 }
 
 describe("PageSurgeAI WHM Gateway v0.4.0", () => {
+  it.each([
+    ["hosting_set_bandwidth", "whm:bandwidth"],
+    ["hosting_validate_ssl_zip", "whm:ssl"],
+    ["hosting_install_ssl_zip", "whm:ssl"]
+  ])("denies %s at the MCP boundary without %s", async (name, scope) => {
+    const read = vi.spyOn(WhmClient.prototype, "call");
+    const { client, server } = await connectedClient();
+    const response = await client.callTool({ name, arguments: { username: "sitea", domain: "example.com", limit_mb: 2048, zip_base64: "c2FmZQ==", confirm: true } });
+    expect(response.isError).toBe(true); expect(JSON.stringify(response)).toContain(scope); expect(read).not.toHaveBeenCalled();
+    const listing = await client.listTools();
+    expect(listing.tools.find(t => t.name === name)?._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["whm:read", scope] }]);
+    await client.close(); await server.close();
+  });
   it.each(["hosting_delete_account", "hosting_delete_wordpress", "hosting_reinstall_wordpress"])("denies %s without verified destructive access", async name => {
     const read = vi.spyOn(WhmClient.prototype, "call"); const { client, server } = await connectedClient();
     const response = await client.callTool({ name, arguments: { plan_id: "a".repeat(64), confirmation: "wrong", confirm: true, site_title: "Fresh", admin_email: "owner@example.com" } });
@@ -71,18 +84,23 @@ describe("PageSurgeAI WHM Gateway v0.4.0", () => {
       "hosting_delete_account",
       "hosting_delete_wordpress",
       "hosting_get_account",
+      "hosting_get_bandwidth",
+      "hosting_get_ssl_status",
       "hosting_get_usage",
       "hosting_get_wordpress_status",
+      "hosting_install_ssl_zip",
       "hosting_install_wordpress",
       "hosting_list_accounts",
       "hosting_list_packages",
       "hosting_prepare_destructive_action",
       "hosting_reinstall_wordpress",
+      "hosting_set_bandwidth",
       "hosting_setup_wordpress_mcp",
+      "hosting_validate_ssl_zip",
       "hosting_wordpress_read",
       "hosting_wordpress_write"
     ]);
-    for (const tool of response.tools.filter((t) => !["hosting_create_account", "hosting_install_wordpress", "hosting_configure_wordpress_email", "hosting_setup_wordpress_mcp", "hosting_wordpress_write", "hosting_delete_account", "hosting_delete_wordpress", "hosting_reinstall_wordpress"].includes(t.name))) {
+    for (const tool of response.tools.filter((t) => !["hosting_create_account", "hosting_install_wordpress", "hosting_configure_wordpress_email", "hosting_setup_wordpress_mcp", "hosting_wordpress_write", "hosting_delete_account", "hosting_delete_wordpress", "hosting_reinstall_wordpress", "hosting_set_bandwidth", "hosting_install_ssl_zip", "hosting_validate_ssl_zip"].includes(t.name))) {
       expect(tool.annotations?.readOnlyHint).toBe(true);
       expect(tool.annotations?.destructiveHint).toBe(false);
       expect(tool._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["whm:read"] }]);

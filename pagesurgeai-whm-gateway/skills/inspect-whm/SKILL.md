@@ -1,6 +1,6 @@
 ---
 name: inspect-whm
-description: Inspect PageSurgeAI WHM accounts, packages and usage; create accounts; install and manage WordPress; preview and execute explicitly approved WordPress removal/reinstallation or account termination across accounts accessible to the configured WHM identity.
+description: Inspect PageSurgeAI WHM accounts, packages and usage; create accounts; adjust monthly bandwidth; install SSL from certificate ZIPs; install and manage WordPress; preview and execute explicitly approved WordPress removal/reinstallation or account termination across accounts accessible to the configured WHM identity.
 ---
 
 # Manage hosting and WordPress
@@ -55,3 +55,33 @@ The backend revalidates ownership, account identity and installation inventory. 
 
 After deployment refresh the existing connection's tools. Add whm:delete to the existing Auth0 API permissions, grant it to the authorized connection/user and reauthorize with required scopes. A healthy process and passing automated tests do not prove upstream deletion permission. Do not perform a live destructive test unless explicitly requested for an exact target.
 
+
+## Account bandwidth limits
+
+Use `hosting_get_bandwidth` with the exact username and primary domain before a change. It reads WHM showbw and returns current-month usage and a limit in MB. WHM showbw reports bytes; the gateway converts using 1024 * 1024. Use 1 GB = 1024 MB in prompts and state the conversion (2 GB = 2048 MB).
+
+Use `hosting_set_bandwidth` only for an explicit account-specific adjustment, with username, primary domain, integer `limit_mb` or literal `unlimited`, and confirm=true. Zero is rejected; unlimited must be explicit. Requires whm:read whm:bandwidth plus WHM Bandwidth Limit Modification (limit-bandwidth), View Account Bandwidth Usage (show-bandwidth), and Account Summary. Preview usage and explain interruption risk if the requested limit is below current usage. `allow_below_usage` defaults false; set true only after the user explicitly accepts that impact, including unknown usage during a reduction.
+
+The gateway verifies ownership/domain, changes only that account, and independently reads back the limit. It does not edit packages, unsuspend accounts or reset usage. Later package changes may overwrite custom limits. Distinguish updated, already_set and change_not_verified. On uncertain results, inspect hosting_get_bandwidth; do not repeat the write automatically.
+
+## SSL installation from an attached ZIP
+
+Use `hosting_get_ssl_status` for a read-only public HTTPS check on a verified account/domain. It reports public TLS status and safe certificate metadata; a CDN may serve a different certificate. It does not establish WordPress/MCP authentication or origin-server status.
+
+An attached ZIP must contain the issued PEM server certificate (.crt/.pem), exactly one matching unencrypted private key (.key/.pem), and required intermediate CA certificates (.ca-bundle/.crt/.pem). Keys alone or a CSR do not provide an issued certificate. No certificate purchase, issuance, activation, automatic renewal or DNS changes are implemented. Password-protected ZIPs, encrypted keys, PFX/P12, self-signed/untrusted certificates, unsafe paths and oversized archives are rejected. Maximum compressed ZIP is 256 KiB, 32 entries, 128 KiB per entry, 512 KiB expanded total. Cert validation checks SAN domain coverage, matching key, dates, supported RSA/ECDSA strength, and a trusted TLS-server chain via Node public roots and OpenSSL 3. Revocation is not checked. Private keys remain in memory and are never extracted to disk by the gateway.
+
+Obtain the actual attached ZIP using the host's supported file access; do not guess a file path or send a local path/attachment URL to the remote server. Encode the ZIP bytes as base64 only for the tool's `zip_base64` argument. Do not print the archive, decoded private key or its base64 in chat, logs, Pages or source files. Do not persist a duplicate of the credential archive. If this host cannot read/encode the attachment, report that limitation rather than inventing its contents.
+
+First call `hosting_validate_ssl_zip` with username, domain and zip_base64. This checks WHM account ownership and exact domain owner (including addon/subdomains verified by getdomainowner), validates the supplied archive, returns safe metadata and impact, and makes no SSL change. Requires whm:read whm:ssl.
+
+Call `hosting_install_ssl_zip` with the same exact target/archive and confirm=true only for an explicitly requested certificate installation. Installation revalidates the ZIP and domain ownership; it may replace the certificate on the Apache SSL virtual host and affect aliases sharing that host. Do not treat a request to add the capability or validate a ZIP as permission to install. Honor an already explicit target-specific installation request without asking again unnecessarily. Requires whm:read whm:ssl plus WHM SSL Site Management (ssl) and domain/account read permissions.
+
+PEM certificate/key/chain are sent only in a verified HTTPS POST body to the configured WHM host, never URLs. Raw upstream output is discarded. Report WHM installation separately from `public_tls.https_verified` and `supplied_certificate_served`; DNS propagation, Apache deployment or a proxy may prevent independent confirmation. Installation does not change WordPress URLs or enable redirects. Inspect public status/WHM after uncertain writes, never automatically reinstall. If OpenSSL 3 is unavailable, validation blocks installation; /health checks.ssl_validator reports runtime readiness.
+
+For activation add/grant whm:bandwidth and whm:ssl to the existing Auth0 API, reauthorize the existing PageSurgeAI WHM Web connection with those scopes, and refresh its tools. Keep existing requested read/create/WordPress scopes; whm:delete is unnecessary for these tools and remains optional. Do not grant upstream privileges or rotate existing secrets automatically.
+
+Example user prompts:
+- "For example.com, show the current monthly bandwidth limit and usage. Do not make changes."
+- "Set example.com's monthly bandwidth limit to 2 GB (2048 MB). Keep its hosting package unchanged."
+- "Validate the attached SSL ZIP for example.com. Do not install it yet."
+- "Install the certificate from this attached ZIP for example.com, then check public HTTPS."
