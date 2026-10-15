@@ -1,17 +1,24 @@
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import type { Config } from "./config.js";
-import { verifyOwnedAccount, WhmClient } from "./whm-client.js";
+import { extractAccounts, verifyOwnedAccount, WhmClient } from "./whm-client.js";
 
 export const WORDPRESS_SCOPE = "whm:wordpress";
+const cpanelUsernameSchema = z.string().regex(/^[a-z][a-z0-9]{0,15}$/);
+export const wordpressDomainSchema = z.string().trim().toLowerCase().max(253).regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/);
+export const wordpressSiteSelectorFields = {
+  username: cpanelUsernameSchema.optional().describe("Optional cPanel username. Use this or domain; if both are supplied they must identify the same account."),
+  domain: wordpressDomainSchema.optional().describe("Exact primary domain of a reseller-owned hosting account. The gateway resolves its username from WHM."),
+};
 export const wordpressInput = {
-  username: z.string().regex(/^[a-z][a-z0-9]{0,15}$/),
-  domain: z.string().trim().toLowerCase().max(253).regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/),
+  username: cpanelUsernameSchema,
+  domain: wordpressDomainSchema,
   site_title: z.string().trim().min(1).max(120),
   admin_email: z.string().trim().email().max(254),
   confirm: z.literal(true)
 };
-const schema = z.object(wordpressInput).strict();
+export const wordpressInstallInput = { ...wordpressInput, username: cpanelUsernameSchema.optional() };
+const schema = z.object(wordpressInstallInput).strict();
 type InstallRequest = z.infer<typeof schema>;
 type Installation = { id: string; url: string };
 
@@ -122,7 +129,7 @@ export class SoftaculousClient {
       if (action === "wordpress") throw new Error("WordPress Manager operation was not confirmed. Inspect installed plugins before retrying; do not assume the upload failed.");
       if (error instanceof Error && /^(cPanel rejected|WordPress installation could|Softaculous inventory|Softaculous response|Softaculous email)/.test(error.message)) throw error;
       if (action === "email") throw new Error("Softaculous email settings could not be confirmed. Inspect email settings before retrying; no installation was started.");
-      throw new Error(writing ? "WordPress installation could not be confirmed; it may have completed. Inspect Softaculous before retrying." : "Cannot read Softaculous securely. Verify HTTPS on the cPanel server and test account credentials.");
+      throw new Error(writing ? "WordPress installation could not be confirmed; it may have completed. Inspect Softaculous before retrying." : "Cannot read Softaculous securely. Verify cPanel HTTPS and the WHM reseller session permission for the selected account.");
     }
   }
   async installations(): Promise<Installation[]> {
@@ -160,14 +167,35 @@ export async function verifiedAccount(config: Config, username: string) {
   return verifyOwnedAccount(config, username);
 }
 
+/** Resolve a site from an exact primary domain or username, then re-check reseller ownership. */
+export async function resolveWordPressAccount(config: Config, selector: string | { username?: string; domain?: string }) {
+  const parsed = typeof selector === "string"
+    ? { username: cpanelUsernameSchema.parse(selector), domain: undefined }
+    : z.object(wordpressSiteSelectorFields).strict().refine(value => Boolean(value.username || value.domain), "Specify a cPanel username or exact primary domain.").parse(selector);
+  let account: any;
+  if (parsed.username) {
+    account = await verifiedAccount(config, parsed.username);
+    if (parsed.domain && String(account.domain).toLowerCase() !== parsed.domain) throw new Error("The selected username and domain do not identify the same primary hosting account.");
+  } else {
+    const domain = wordpressDomainSchema.parse(parsed.domain);
+    const visible = extractAccounts(await new WhmClient(config).call("listaccts"));
+    const matches = visible.filter(a => String(a.domain ?? "").trim().toLowerCase() === domain);
+    if (matches.length !== 1 || !matches[0]?.user) throw new Error(matches.length ? "The exact primary domain is ambiguous in WHM; provide the cPanel username." : "No hosting account with that exact primary domain was found in WHM.");
+    account = await verifiedAccount(config, String(matches[0].user));
+    if (String(account.domain ?? "").trim().toLowerCase() !== domain) throw new Error("The domain-to-account mapping changed during verification; the request was blocked.");
+  }
+  return account;
+}
+
 function installationForDomain(installations: Installation[], domain: string) {
   return installations.filter((installation) => {
     try { const url = new URL(installation.url); return url.hostname.toLowerCase() === domain; } catch { return false; }
   });
 }
 
-export async function wordpressStatus(config: Config, username: string) {
-  const account = await verifiedAccount(config, username);
+export async function wordpressStatus(config: Config, selector: string | { username?: string; domain?: string }) {
+  const account = await resolveWordPressAccount(config, selector);
+  const username = String(account.user);
   const domain = String(account.domain).toLowerCase();
   const installations = installationForDomain(await new SoftaculousClient(config, username).installations(), domain);
   return { username, domain, installations, count: installations.length, source: "Softaculous inventory; unmanaged WordPress installations may not be listed" };
@@ -181,8 +209,9 @@ export async function configureInstallationEmail(client: SoftaculousClient, cont
   return email.data;
 }
 
-export async function configureWordpressEmail(config: Config, username: string) {
-  const account = await verifiedAccount(config, username);
+export async function configureWordpressEmail(config: Config, selector: string | { username?: string; domain?: string }) {
+  const account = await resolveWordPressAccount(config, selector);
+  const username = String(account.user);
   const recipient = await configureInstallationEmail(new SoftaculousClient(config, username), account.email);
   return { status: "configured", username, recipient, provider: "Softaculous", existing_credentials_sent: false,
     password_inclusion: "requested", inbox_delivery: "not_verified" };
@@ -190,11 +219,12 @@ export async function configureWordpressEmail(config: Config, username: string) 
 
 export async function installWordpress(config: Config, input: InstallRequest) {
   const request = schema.parse(input);
-  const account = await verifiedAccount(config, request.username);
+  const account = await resolveWordPressAccount(config, { username: request.username, domain: request.domain });
+  const username = String(account.user);
   if (String(account.domain).toLowerCase() !== request.domain) throw new Error("The requested domain does not match the selected account's primary domain.");
-  const client = new SoftaculousClient(config, request.username);
+  const client = new SoftaculousClient(config, username);
   const existing = installationForDomain(await client.installations(), request.domain);
-  if (existing.length) return { status: "already_exists", username: request.username, domain: request.domain, installations: existing };
+  if (existing.length) return { status: "already_exists", username, domain: request.domain, installations: existing };
   // Explicitly authorized HTTP exception for this isolated test domain only.
   // Control-panel authentication and installer requests always retain HTTPS.
   const protocol = request.domain === "mature-yellow-fish.104-219-248-4.cpanel.site" ? "http" : "https";
@@ -218,7 +248,7 @@ export async function installWordpress(config: Config, input: InstallRequest) {
   if (hasErrors(body.error)) throw new Error("Softaculous reported an installation error. Inspect WordPress Manager for its details and check inventory before retrying. Existing-file protection remains enabled.");
   if (![true, 1, "1"].includes(body.done) || body.setupcontinue) throw new Error("WordPress installation was not confirmed complete. Inspect WordPress Manager before retrying.");
   // Ignore raw API data, which may contain admin and database passwords.
-  return { status: "installed", username: request.username, domain: request.domain, site_url: `${protocol}://${request.domain}/`,
+  return { status: "installed", username, domain: request.domain, site_url: `${protocol}://${request.domain}/`,
     admin_url: `${protocol}://${request.domain}/wp-admin/`, admin_username: "pagesurgeadmin", mcp_plugin_installed: false,
     credential_delivery: "Installation email requested through Softaculous. Password inclusion requested automatically for this installation. Use WordPress Manager Login if needed. No password is returned in chat.",
     email: { recipient, status: "requested", inbox_delivery: "not_verified", password_inclusion: "requested" } };

@@ -12,7 +12,7 @@ function installed() { vi.mocked(installWordpress).mockResolvedValue({ status: "
 it("sets up and verifies MCP only after confirmed new WordPress success", async () => {
   installed(); vi.mocked(setupWordpressMcp).mockResolvedValue({ status: "connected", installed: true } as any);
   expect(await installWordpressWithMcp(config, input)).toMatchObject({ status: "installed", mcp_setup: "connected", mcp_plugin_installed: true, email: { status: "requested" } });
-  expect(setupWordpressMcp).toHaveBeenCalledWith(config, "labsite", true);
+  expect(setupWordpressMcp).toHaveBeenCalledWith(config, { username: "labsite", domain: "example.com" }, true);
   expect(vi.mocked(installWordpress).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(setupWordpressMcp).mock.invocationCallOrder[0]);
 });
 it("leaves existing installations unchanged", async () => {

@@ -39,6 +39,48 @@ it("uses stable scoped credentials and authoritative confirmation over HTTPS", a
   expect(token).toBe(original); expect(token).not.toContain(config.WHM_API_TOKEN);
   expect(JSON.stringify(first)).not.toContain(token); expect(fetch).toHaveBeenCalledTimes(4);
 });
+it("routes a domain-only WordPress request through the verified WHM account mapping", async () => {
+  target();
+  vi.spyOn(SoftaculousClient.prototype, "installations").mockResolvedValue([{ id: "26_42", url: "https://lab.example.com/" }]);
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+    if (init?.method === "HEAD") return new Response(null, { status: 200 });
+    return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { structuredContent: { url: "https://lab.example.com/", plugin_version: "2.0.5", name: "Lab" } } }));
+  });
+  const result = await wordpressRead(config, { domain: "lab.example.com" }, "get_site_info");
+  expect(result).toMatchObject({ url: "https://lab.example.com/", plugin_version: "2.0.5" });
+  expect(String(fetch.mock.calls[1][0])).toContain("https://lab.example.com/");
+  expect(WhmClient.prototype.call).toHaveBeenCalledWith("listaccts");
+});
+it("routes two domains to separate accounts and sends separate site tokens", async () => {
+  const accounts = [
+    { user: "sitealpha", owner: "reseller", domain: "alpha.example.com", suspended: 0 },
+    { user: "sitebeta", owner: "reseller", domain: "beta.example.com", suspended: 0 }
+  ];
+  vi.spyOn(WhmClient.prototype, "call").mockImplementation(async (name, params = {}) => ({
+    data: { acct: name === "listaccts" ? accounts : accounts.filter(a => a.user === params.user) }
+  }));
+  vi.spyOn(SoftaculousClient.prototype, "installations").mockImplementation(function (this: any) {
+    return Promise.resolve([{ id: this.username === "sitealpha" ? "26_41" : "26_42", url: `https://${this.username === "sitealpha" ? "alpha" : "beta"}.example.com/` }]);
+  });
+  const bearerTokens: string[] = [];
+  const endpoints: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+    if (init?.method === "HEAD") return new Response(null, { status: 200 });
+    endpoints.push(String(url));
+    bearerTokens.push((init?.headers as any).Authorization.slice(7));
+    const site = String(url).includes("alpha.example.com") ? "https://alpha.example.com/" : "https://beta.example.com/";
+    return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { structuredContent: { url: site, plugin_version: "2.0.5" } } }));
+  });
+  await wordpressRead(config, { domain: "alpha.example.com" }, "get_site_info");
+  await wordpressRead(config, { domain: "beta.example.com" }, "get_site_info");
+  expect(endpoints).toEqual([
+    "https://alpha.example.com/index.php?rest_route=%2Fwpmcp%2Fv1%2Fmcp",
+    "https://beta.example.com/index.php?rest_route=%2Fwpmcp%2Fv1%2Fmcp"
+  ]);
+  expect(bearerTokens).toHaveLength(2);
+  expect(bearerTokens[0]).not.toBe(bearerTokens[1]);
+  expect(bearerTokens.every(token => token.startsWith("wpmcp_") && !token.includes(config.WHM_API_TOKEN))).toBe(true);
+});
 it("ships only a token hash and reports the HTTPS blocker honestly", async () => {
   target(); vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("TLS"));
   const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValueOnce({ plugins: {} }).mockResolvedValueOnce({ done: true });
