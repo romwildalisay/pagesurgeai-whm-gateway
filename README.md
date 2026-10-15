@@ -1,4 +1,4 @@
-# PageSurgeAI WHM Gateway v0.9.1
+# PageSurgeAI WHM Gateway v0.9.2
 
 A Node.js MCP gateway for a cPanel/WHM reseller. It supports scoped hosting inventory and account creation, WordPress installation and prompt management across verified reseller-owned accounts, bandwidth and SSL operations, plus separately authorized destructive actions.
 
@@ -141,6 +141,6 @@ Example prompts:
 
 The resolver supports the primary domain at each reseller-owned cPanel account. Addon domains and sites outside this WHM reseller are not routed by this version.
 
-## Softaculous plugin inventory diagnostics (0.9.1)
+## Softaculous plugin inventory compatibility (0.9.2)
 
-If Softaculous returns an unsupported plugin-list response, MCP setup remains fail-closed and does not upload a plugin. The error now includes only a sanitized response-shape summary (safe top-level field names and JavaScript value types) to help diagnose compatibility. It never includes upstream response values, credentials, cookies or Bearer tokens. After correcting the Softaculous response mapping, retry MCP setup on the existing WordPress installation; do not reinstall WordPress.
+Softaculous plugin inventory can be returned under either `plugins` or `plugins_list`. The gateway now recognizes both structured response forms, checks the inventory for an existing MCP Manager before uploading, and remains fail-closed for missing or unsupported fields. Diagnostics expose only safe field names and value types, never response values or credentials. Retry MCP setup on the existing WordPress installation; do not reinstall WordPress.
