@@ -1,5 +1,6 @@
+import { installWordpressWithMcp } from "./wordpress-install.js";
 import { createHostingAccount, creationInput, CREATE_SCOPE } from "./account-creation.js";
-import { configureWordpressEmail, installWordpress, wordpressStatus, wordpressInput, WORDPRESS_SCOPE } from "./wordpress-setup.js";
+import { configureWordpressEmail, wordpressStatus, wordpressInput, WORDPRESS_SCOPE } from "./wordpress-setup.js";
 import { setupWordpressMcp, wordpressRead, wordpressWrite, wordpressReads, wordpressWrites, wordpressAccountInput, wordpressParameters } from "./wordpress-mcp.js";
 import { DELETE_SCOPE, prepareDestructiveAction, destructivePlanInput, destructiveExecuteInput, deleteHostingAccount, deleteWordpress, reinstallWordpress } from "./destructive-actions.js";
 import { BANDWIDTH_SCOPE, SSL_SCOPE, accountTargetInput, bandwidthInput, sslArchiveInput, getBandwidth, setAccountBandwidth, validateAccountSslZip, installAccountSslZip, getAccountSslStatus } from "./account-management.js";
@@ -35,7 +36,7 @@ export function createMcpServer(config: Config, access: { canCreate: boolean; ca
   const whm = new WhmClient(config);
   const securitySchemes = [{ type: "oauth2" as const, scopes: [config.OAUTH_SCOPE] }];
   const server = new McpServer(
-    { name: "pagesurgeai-whm-gateway", version: "0.8.1" },
+    { name: "pagesurgeai-whm-gateway", version: "0.8.2" },
     { instructions: "Inspect hosting, create accounts with creation permission, and manage WordPress only on the verified reseller-owned accounts. Install the user's WordPress MCP Manager through hosting_setup_wordpress_mcp. Bearer authentication stays private in this gateway and requires valid WordPress HTTPS. Read site identity and current content before writes. Set confirm=true only for user-authorized actions. Do not retry uncertain writes. Destructive hosting operations require a fresh preview, exact target approval and whm:delete. No shell access is implemented." }
   );
 
@@ -131,13 +132,13 @@ export function createMcpServer(config: Config, access: { canCreate: boolean; ca
 
   server.registerTool("hosting_install_wordpress", {
     title: "Install WordPress on selected account",
-    description: "Install WordPress at the root of the selected verified account's primary domain through Softaculous. HTTPS is required except for the explicitly authorized mature-yellow-fish.104-219-248-4.cpanel.site HTTP test. Requires whm:read and whm:wordpress plus WHM reseller session access to the selected verified account. Set confirm=true only when the user requests installation on this domain. Never overwrites existing files; existing installations are returned without changes. New installations request an email to the verified hosting contact address; password inclusion is requested automatically. Admin password is generated privately; use Softaculous Login. On uncertain results inspect WordPress Manager before retrying. Does not install the WordPress MCP plugin.",
+    description: "Install WordPress at the root of the selected verified account's primary domain through Softaculous. HTTPS is required except for the explicitly authorized mature-yellow-fish.104-219-248-4.cpanel.site HTTP test. Requires whm:read and whm:wordpress plus WHM reseller session access to the selected verified account. Set confirm=true only when the user requests installation on this domain. Never overwrites existing files; existing installations are returned without changes. New installations request an email to the verified hosting contact address; password inclusion is requested automatically. Admin password is generated privately; use Softaculous Login. On uncertain results inspect WordPress Manager before retrying. Automatically installs and connects WordPress MCP Manager 2.0.5 after a new installation; reports incomplete MCP setup separately. Existing sites remain unchanged.",
     inputSchema: wordpressInput, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     _meta: { securitySchemes: [{ type: "oauth2", scopes: [config.OAUTH_SCOPE, WORDPRESS_SCOPE] }] }
   }, async (input) => {
     if (!access.canInstall) throw new Error("WordPress installation requires whm:wordpress. Reauthorize the existing Web connection with that permission.");
-    const installed = await installWordpress(config, input);
-    return result(installed, installed.status === "already_exists" ? "WordPress is already listed on this domain; no changes made." : "Softaculous confirmed WordPress installation. Use WordPress Manager's Login button. The WordPress MCP plugin is not installed yet.");
+    const installed = await installWordpressWithMcp(config, input);
+    return result(installed, installed.status === "already_exists" ? "WordPress is already listed on this domain; no changes made." : ("mcp_setup" in installed && installed.mcp_setup === "connected" ? "WordPress installed and MCP connection verified." : "WordPress installed; MCP setup incomplete. Inspect plugin inventory and retry hosting_setup_wordpress_mcp without reinstalling WordPress."));
   });
   server.registerTool("hosting_setup_wordpress_mcp", {
     title: "Install and connect WordPress MCP Manager",

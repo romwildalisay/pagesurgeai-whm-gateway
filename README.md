@@ -137,3 +137,7 @@ Example prompts:
 - Install SSL for example.com from the attached ZIP and verify public HTTPS.
 
 Automated tests use offline certificate fixtures and mocked WHM writes. They do not prove reseller ACL availability or perform live account changes.
+
+## Automatic MCP setup (0.8.2)
+
+New hosting_install_wordpress installations automatically attempt MCP Manager setup and verify get_site_info. Responses retain WordPress status installed with mcp_setup connected or incomplete. Existing sites remain unchanged. Retry incomplete setup using hosting_setup_wordpress_mcp after inspection, never by reinstalling WordPress. See UPDATE-0.8.2.md.
