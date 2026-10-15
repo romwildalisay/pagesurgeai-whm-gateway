@@ -83,7 +83,7 @@ HTTP is explicitly permitted only for the isolated `mature-yellow-fish.104-219-2
 
 New installations verify the account's WHM contact email, configure Softaculous `act=email` with `editemailsettings=1` and `ins_email=1`, then omit `noemail` on installation. No arbitrary recipient is accepted. A configuration failure stops installation. The `hosting_configure_wordpress_email` tool requires `whm:read whm:wordpress` and explicit confirmation; it configures future installation mail and never retrieves an old password, resets one, or resends credentials for an existing site.
 
-Softaculous's separate Email settings > Email password in plain text option must be enabled to include the password; this undocumented API checkbox is not silently guessed or toggled by the adapter. Account email settings may also affect Softaculous's other notifications. Report only an email request, never confirmed inbox delivery. Verify receipt on a future authorized fresh installation without reinstalling an existing site just to test mail.
+The gateway requests `email_password=1` in both email configuration and every new installation request, alongside installation emails to the verified WHM contact. This requests automatic plaintext password inclusion without a manual checkbox. It reports a request, never confirmed password inclusion or inbox delivery. Softaculous versions/provider policies may differ; verify the email on the next authorized fresh installation. Existing sites are not reinstalled or reset for mail testing. The preference can affect later Softaculous notifications for that account. Plaintext password delivery exposes the password to anyone with access to the message.
 
 
 ## WordPress MCP bridge (0.6.0)

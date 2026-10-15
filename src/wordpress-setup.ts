@@ -176,7 +176,7 @@ export async function wordpressStatus(config: Config, username: string) {
 export async function configureInstallationEmail(client: SoftaculousClient, contactEmail: unknown) {
   const email = z.string().trim().email().max(254).safeParse(contactEmail);
   if (!email.success) throw new Error("The hosting account has no valid contact email. Set its contact email in WHM before requesting credential delivery; no installation was started.");
-  const body = await client.request("email", new URLSearchParams({ editemailsettings: "1", email: email.data, ins_email: "1" }));
+  const body = await client.request("email", new URLSearchParams({ editemailsettings: "1", email: email.data, ins_email: "1", email_password: "1" }));
   if (hasErrors(body.error) || ![true, 1, "1"].includes(body.done)) throw new Error("Softaculous installation-email settings were not confirmed. Check Softaculous email settings; no installation was started.");
   return email.data;
 }
@@ -185,7 +185,7 @@ export async function configureWordpressEmail(config: Config, username: string) 
   const account = await verifiedAccount(config, username);
   const recipient = await configureInstallationEmail(new SoftaculousClient(config, username), account.email);
   return { status: "configured", username, recipient, provider: "Softaculous", existing_credentials_sent: false,
-    password_inclusion: "Requires Softaculous Email settings > Email password in plain text", inbox_delivery: "not_verified" };
+    password_inclusion: "requested", inbox_delivery: "not_verified" };
 }
 
 export async function installWordpress(config: Config, input: InstallRequest) {
@@ -209,7 +209,7 @@ export async function installWordpress(config: Config, input: InstallRequest) {
   } catch { throw new Error(`The domain's ${protocol.toUpperCase()} could not be verified. Fix DNS/connectivity${protocol === "https" ? "/SSL" : ""} before installation; no installation was started.`); }
   const recipient = await configureInstallationEmail(client, account.email);
   const password = `Aa9!${randomBytes(32).toString("base64url")}`;
-  const params = new URLSearchParams({ softsubmit: "1", softdomain: request.domain, softdirectory: "", softproto: protocol === "http" ? "1" : "3",
+  const params = new URLSearchParams({ softsubmit: "1", email_password: "1", softdomain: request.domain, softdirectory: "", softproto: protocol === "http" ? "1" : "3",
     softdb: `wp${randomBytes(4).toString("hex")}`, admin_username: "pagesurgeadmin", admin_pass: password,
     admin_email: request.admin_email, language: "en", site_name: request.site_title, site_desc: "PageSurgeAI test site" });
   // Never set overwrite_existing. Softaculous must retain its existing-file
@@ -220,6 +220,6 @@ export async function installWordpress(config: Config, input: InstallRequest) {
   // Ignore raw API data, which may contain admin and database passwords.
   return { status: "installed", username: request.username, domain: request.domain, site_url: `${protocol}://${request.domain}/`,
     admin_url: `${protocol}://${request.domain}/wp-admin/`, admin_username: "pagesurgeadmin", mcp_plugin_installed: false,
-    credential_delivery: "Installation email requested through Softaculous. Password inclusion depends on its Email password in plain text setting. Use WordPress Manager Login if needed. No password is returned in chat.",
-    email: { recipient, status: "requested", inbox_delivery: "not_verified", password_inclusion: "depends_on_softaculous_email_setting" } };
+    credential_delivery: "Installation email requested through Softaculous. Password inclusion requested automatically for this installation. Use WordPress Manager Login if needed. No password is returned in chat.",
+    email: { recipient, status: "requested", inbox_delivery: "not_verified", password_inclusion: "requested" } };
 }

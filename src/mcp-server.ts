@@ -35,7 +35,7 @@ export function createMcpServer(config: Config, access: { canCreate: boolean; ca
   const whm = new WhmClient(config);
   const securitySchemes = [{ type: "oauth2" as const, scopes: [config.OAUTH_SCOPE] }];
   const server = new McpServer(
-    { name: "pagesurgeai-whm-gateway", version: "0.8.0" },
+    { name: "pagesurgeai-whm-gateway", version: "0.8.1" },
     { instructions: "Inspect hosting, create accounts with creation permission, and manage WordPress only on the verified reseller-owned accounts. Install the user's WordPress MCP Manager through hosting_setup_wordpress_mcp. Bearer authentication stays private in this gateway and requires valid WordPress HTTPS. Read site identity and current content before writes. Set confirm=true only for user-authorized actions. Do not retry uncertain writes. Destructive hosting operations require a fresh preview, exact target approval and whm:delete. No shell access is implemented." }
   );
 
@@ -119,19 +119,19 @@ export function createMcpServer(config: Config, access: { canCreate: boolean; ca
 
   server.registerTool("hosting_configure_wordpress_email", {
     title: "Configure WordPress installation emails",
-    description: "Enable Softaculous installation emails to the verified WHM contact email of the selected verified account. Requires whm:read and whm:wordpress. Use confirm=true only when requested. Does not send existing credentials, reset passwords, reinstall WordPress, or accept an arbitrary recipient. Password inclusion requires Softaculous's Email password in plain text setting. Inbox delivery is not verified.",
+    description: "Enable Softaculous installation emails to the verified WHM contact email of the selected verified account. Requires whm:read and whm:wordpress. Use confirm=true only when requested. Does not send existing credentials, reset passwords, reinstall WordPress, or accept an arbitrary recipient. Password inclusion is requested automatically. Inbox delivery is not verified.",
     inputSchema: { username: z.string().regex(/^[a-z][a-z0-9]{0,15}$/), confirm: z.literal(true) },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     _meta: { securitySchemes: [{ type: "oauth2", scopes: [config.OAUTH_SCOPE, WORDPRESS_SCOPE] }] }
   }, async ({ username }) => {
     if (!access.canInstall) throw new Error("WordPress email configuration requires the whm:wordpress permission.");
     const configured = await configureWordpressEmail(config, username);
-    return result(configured, `Configured Softaculous installation emails to ${configured.recipient}. Enable Email password in plain text in Softaculous to include passwords. No existing credentials were sent.`);
+    return result(configured, `Configured Softaculous installation emails to ${configured.recipient}. Password inclusion was requested automatically. No existing credentials were sent.`);
   });
 
   server.registerTool("hosting_install_wordpress", {
     title: "Install WordPress on selected account",
-    description: "Install WordPress at the root of the selected verified account's primary domain through Softaculous. HTTPS is required except for the explicitly authorized mature-yellow-fish.104-219-248-4.cpanel.site HTTP test. Requires whm:read and whm:wordpress plus WHM reseller session access to the selected verified account. Set confirm=true only when the user requests installation on this domain. Never overwrites existing files; existing installations are returned without changes. New installations request an email to the verified hosting contact address; password inclusion depends on Softaculous email settings. Admin password is generated privately; use Softaculous Login. On uncertain results inspect WordPress Manager before retrying. Does not install the WordPress MCP plugin.",
+    description: "Install WordPress at the root of the selected verified account's primary domain through Softaculous. HTTPS is required except for the explicitly authorized mature-yellow-fish.104-219-248-4.cpanel.site HTTP test. Requires whm:read and whm:wordpress plus WHM reseller session access to the selected verified account. Set confirm=true only when the user requests installation on this domain. Never overwrites existing files; existing installations are returned without changes. New installations request an email to the verified hosting contact address; password inclusion is requested automatically. Admin password is generated privately; use Softaculous Login. On uncertain results inspect WordPress Manager before retrying. Does not install the WordPress MCP plugin.",
     inputSchema: wordpressInput, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     _meta: { securitySchemes: [{ type: "oauth2", scopes: [config.OAUTH_SCOPE, WORDPRESS_SCOPE] }] }
   }, async (input) => {

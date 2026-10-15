@@ -52,6 +52,8 @@ it("verifies HTTPS and posts only WordPress install fields without enabling over
   expect(fields.get("softdirectory")).toBe("");
   expect(fields.has("overwrite_existing")).toBe(false);
   expect(fields.has("noemail")).toBe(false);
+  expect(fields.get("email_password")).toBe("1");
+  expect(api.mock.calls[1][1]?.get("email_password")).toBe("1");
   expect(api.mock.calls[1][0]).toBe("email");
   expect(api.mock.calls[1][1]?.get("email")).toBe("account@example.com");
   expect(result).toMatchObject({ email: { recipient: "account@example.com", status: "requested", inbox_delivery: "not_verified" } });
@@ -202,6 +204,7 @@ it("configures email only to the verified hosting contact without resetting an e
   expect(api).toHaveBeenCalledOnce();
   expect(api.mock.calls[0][0]).toBe("email");
   expect(api.mock.calls[0][1]?.get("email")).toBe("account@example.com");
+  expect(api.mock.calls[0][1]?.get("email_password")).toBe("1");
   expect(result).toMatchObject({ status: "configured", existing_credentials_sent: false, recipient: "account@example.com" });
   expect(JSON.stringify(result)).not.toContain("private");
 });
