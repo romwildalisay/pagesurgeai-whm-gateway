@@ -107,8 +107,22 @@ it("reports only safe response-shape diagnostics for unsupported plugin inventor
   vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValue({ data: { plugins: ["private-value"] } });
   let message = "";
   await setupWordpressMcp(config, "labsite", true).catch((error: unknown) => { message = error instanceof Error ? error.message : String(error); });
-  expect(message).toMatch(/reason=plugins_field_missing; fields=data; plugins_type=undefined; error_type=undefined/);
+  expect(message).toMatch(/reason=plugins_field_missing; fields=data; plugins_field=none; plugins_type=undefined; error_type=undefined/);
   expect(message).not.toContain("private-value");
+});
+it("accepts Softaculous plugins_list and detects an existing MCP plugin", async () => {
+  target(); vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("TLS"));
+  const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValue({ plugins_list: ["akismet/akismet.php", "wordpress-mcp-manager/wordpress-mcp-manager.php"] });
+  const result = await setupWordpressMcp(config, "labsite", true);
+  expect(result.status).toBe("existing_plugin_needs_connection");
+  expect(api).toHaveBeenCalledTimes(1);
+});
+it("installs through Softaculous when plugins_list confirms no MCP plugin", async () => {
+  target(); vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("TLS"));
+  const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValueOnce({ plugins_list: ["akismet/akismet.php", "loginizer/loginizer.php"] }).mockResolvedValueOnce({ done: true });
+  const result = await setupWordpressMcp(config, "labsite", true);
+  expect(result.status).toBe("installed_https_required");
+  expect(api).toHaveBeenCalledTimes(2);
 });
 it("never retries uncertain writes", async () => {
   target(); const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 401 })).mockRejectedValueOnce(new Error("private-secret"));

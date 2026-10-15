@@ -36,12 +36,13 @@ type Target = Awaited<ReturnType<typeof target>>;
 function pluginInventoryDiagnostic(inventory: Record<string, unknown>) {
   const safeField = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
   const fields = Object.keys(inventory).filter(key => safeField.test(key)).sort().slice(0, 12);
-  const plugins = inventory.plugins;
+  const pluginField = Object.hasOwn(inventory, "plugins") ? "plugins" : Object.hasOwn(inventory, "plugins_list") ? "plugins_list" : undefined;
+  const plugins = pluginField ? inventory[pluginField] : undefined;
   const pluginType = plugins === null ? "null" : Array.isArray(plugins) ? "array" : typeof plugins;
   const error = inventory.error;
   const errorType = error === null ? "null" : Array.isArray(error) ? "array" : typeof error;
-  const reason = hasErrors(error) ? "upstream_error" : !Object.hasOwn(inventory, "plugins") ? "plugins_field_missing" : "plugins_field_invalid";
-  return `WordPress plugin inventory was not recognized. No plugin was installed; inspect Softaculous WordPress Manager. Safe diagnostic: reason=${reason}; fields=${fields.join(",") || "none"}; plugins_type=${pluginType}; error_type=${errorType}.`;
+  const reason = hasErrors(error) ? "upstream_error" : !pluginField ? "plugins_field_missing" : "plugins_field_invalid";
+  return `WordPress plugin inventory was not recognized. No plugin was installed; inspect Softaculous WordPress Manager. Safe diagnostic: reason=${reason}; fields=${fields.join(",") || "none"}; plugins_field=${pluginField ?? "none"}; plugins_type=${pluginType}; error_type=${errorType}.`;
 }
 
 export function sanitizeWordpressResult(value: unknown, token: string): unknown {
@@ -117,10 +118,14 @@ export async function setupWordpressMcp(config: Config, selector: WordPressSelec
     try { const site = await rpc(config, t, "get_site_info"); return { status: "connected", username, domain: t.domain, site }; } catch { /* Read only. Inspect plugin inventory before deciding whether to install. */ }
   }
   const inventory = await t.client.request("wordpress", new URLSearchParams({ insid: t.installation.id, type: "plugins", list: "1" }));
-  if (hasErrors(inventory.error) || !inventory.plugins || typeof inventory.plugins !== "object") throw new Error(pluginInventoryDiagnostic(inventory));
+  // Softaculous versions return the installed plugin map under either key.
+  // Accept only structured values; an unknown shape must never be treated as
+  // an empty plugin list, since that could overwrite an existing installation.
+  const plugins = inventory.plugins ?? inventory.plugins_list;
+  if (hasErrors(inventory.error) || !plugins || typeof plugins !== "object") throw new Error(pluginInventoryDiagnostic(inventory));
   // Detect the plugin anywhere in the returned plugin list, without depending
   // on undocumented active/status values or interpreting unknown data as empty.
-  if (JSON.stringify(inventory.plugins).includes("wordpress-mcp-manager")) return { status: "existing_plugin_needs_connection", username, domain: t.domain, installed: true, token_configured: "not_verified", connection: "not_verified", next_step: "Verify HTTPS and the existing plugin token; the gateway will not overwrite or rotate an existing token." };
+  if (JSON.stringify(plugins).includes("wordpress-mcp-manager")) return { status: "existing_plugin_needs_connection", username, domain: t.domain, installed: true, token_configured: "not_verified", connection: "not_verified", next_step: "Verify HTTPS and the existing plugin token; the gateway will not overwrite or rotate an existing token." };
   const form = new FormData();
   form.set("insid", t.installation.id); form.set("type", "plugins"); form.set("activate", "1");
   form.set("custom_file", new Blob([new Uint8Array(await bundle(t))], { type: "application/zip" }), "wordpress-mcp-manager-2.0.5-gateway.zip");

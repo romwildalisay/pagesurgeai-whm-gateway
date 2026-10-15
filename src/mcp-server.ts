@@ -36,7 +36,7 @@ export function createMcpServer(config: Config, access: { canCreate: boolean; ca
   const whm = new WhmClient(config);
   const securitySchemes = [{ type: "oauth2" as const, scopes: [config.OAUTH_SCOPE] }];
   const server = new McpServer(
-    { name: "pagesurgeai-whm-gateway", version: "0.9.0" },
+    { name: "pagesurgeai-whm-gateway", version: "0.9.2" },
     { instructions: "Inspect hosting, create accounts with creation permission, and manage WordPress on verified reseller-owned accounts. Select WordPress sites by exact primary domain; the gateway resolves the account through WHM and uses an independent private Bearer token per installation. Install the user's WordPress MCP Manager through hosting_setup_wordpress_mcp. Valid WordPress HTTPS is required. Read site identity and current content before writes. Set confirm=true only for user-authorized actions. Do not retry uncertain writes. Destructive hosting operations require a fresh preview, exact target approval and whm:delete. No shell access is implemented." }
   );
 
