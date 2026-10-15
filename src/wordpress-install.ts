@@ -8,7 +8,7 @@ export async function installWordpressWithMcp(config: Config, input: Parameters<
   const wordpress = await installWordpress(config, input);
   if (wordpress.status !== "installed") return wordpress;
   try {
-    const mcp = await setupWordpressMcp(config, input.username, true);
+    const mcp = await setupWordpressMcp(config, { username: input.username, domain: input.domain }, true);
     return { ...wordpress, mcp_plugin_installed: mcp.installed === true || mcp.status === "connected",
       mcp_setup: mcp.status === "connected" ? "connected" : "incomplete", mcp };
   } catch {

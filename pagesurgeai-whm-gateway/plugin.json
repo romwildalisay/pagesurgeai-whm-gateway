@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "pagesurgeai-whm-gateway",
-  "version": "0.8.0",
-  "description": "Inspect WHM hosting, create accounts, and set up WordPress through a restricted Softaculous test adapter.",
+  "version": "0.9.0",
+  "description": "Manage reseller-owned hosting and multiple WordPress sites through one verified gateway.",
   "author": {
     "name": "PageSurgeAI"
   },
@@ -10,8 +10,8 @@
     "com.openai": {
       "interface": {
         "displayName": "PageSurgeAI WHM Gateway",
-        "shortDescription": "Inspect WHM hosting safely",
-        "longDescription": "Review cPanel accounts, hosting packages, and resource usage through a restricted read-only WHM gateway.",
+        "shortDescription": "Manage hosting and WordPress sites",
+        "longDescription": "Manage reseller-owned hosting accounts and route WordPress work by verified domain through one private gateway connection.",
         "developerName": "PageSurgeAI",
         "category": "Developer Tools",
         "capabilities": [
@@ -19,8 +19,8 @@
         ],
         "defaultPrompt": [
           "Show all hosting accounts without making changes.",
-          "List the available WHM hosting packages.",
-          "Check resource usage for a hosting account."
+          "For example.com, show WordPress site details without changes.",
+          "For example.com, create a draft About page."
         ]
       },
       "apps": "./.app.json"

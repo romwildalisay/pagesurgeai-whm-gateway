@@ -1,6 +1,6 @@
-# PageSurgeAI WHM Gateway v0.5.0
+# PageSurgeAI WHM Gateway v0.9.0
 
-A Node.js MCP gateway for a cPanel/WHM reseller, with Auth0 authentication, five read-only tools and separately authorized account-creation and WordPress-installation tools.
+A Node.js MCP gateway for a cPanel/WHM reseller. It supports scoped hosting inventory and account creation, WordPress installation and prompt management across verified reseller-owned accounts, bandwidth and SSL operations, plus separately authorized destructive actions.
 
 ## Tools and permissions
 
@@ -14,7 +14,7 @@ A Node.js MCP gateway for a cPanel/WHM reseller, with Auth0 authentication, five
 
 Creation requires domain, lowercase cPanel username, an exact existing package, contact email, and `confirm: true`. The gateway validates inventory and packages before writing. An existing matching username/domain/package returns `already_exists` without changes; conflicting accounts are rejected. WHM applies server limits and username rules, including any database prefix restrictions.
 
-Creation uses a POST form body. A random password is generated privately; neither it nor raw account-creation output is returned to the client. Shell and reseller access are disabled, existing DNS zones are not overwritten, and package quotas are inherited. Access the resulting cPanel account through WHM or reset its password there. No arbitrary WHM proxy, account modification, deletion, or general WordPress management is provided.
+Creation uses a POST form body. A random password is generated privately; neither it nor raw account-creation output is returned to the client. Shell and reseller access are disabled, existing DNS zones are not overwritten, and package quotas are inherited. Access the resulting cPanel account through WHM or reset its password there. The gateway exposes only the documented, scoped operations; it does not provide an arbitrary WHM proxy.
 
 ## Enable creation on the working connection
 
@@ -22,7 +22,7 @@ Creation uses a POST form body. A random password is generated privately; neithe
 2. Add `whm:create` to the protected Auth0 API's permissions alongside `whm:read`. Ensure the authorized user's access token receives both scopes; requesting a scope does not itself grant it. If RBAC is enabled, assign the permission to the appropriate user or role.
 3. Enable Create Accounts (`create-acct`) for the existing backend WHM API token and its reseller owner. Retain read permissions and existing IP restrictions. Do not grant root or unrelated permissions.
 4. Update the existing Web connection's requested scopes to include both permissions, reauthorize as needed, and refresh its discovered tools. The package preserves the registered Web App binding.
-5. Request a specific account, then verify it with account inventory. For WordPress installation, follow the separate test-account setup below.
+5. Request a specific account, then verify it with account inventory. For WordPress installation and site management, use the exact primary domain so the gateway can resolve the account through WHM.
 
 Read-only tokens continue to work for read operations. Creation fails with HTTP 403 and an insufficient-scope challenge unless both OAuth scopes are verified. All MCP HTTP requests remain protected by the existing OAuth boundary.
 
@@ -45,33 +45,23 @@ The WHM token belongs only in Render's environment. Never place credentials in r
 | `OAUTH_SCOPE` | Base read permission, default `whm:read`; creation also requires `whm:create` |
 | `WHM_TIMEOUT_MS` | WHM request timeout, default `15000` |
 
-Run `npm ci`, `npm run build`, and `npm test` before deployment. Tests mock WHM writes and do not create hosting resources. `/health` reports version `0.8.0`, process status and OpenSSL readiness; it does not test OAuth or WHM. Protected-resource metadata advertises all supported scopes.
+Run `npm ci`, `npm run build`, and `npm test` before deployment. Tests mock WHM writes and do not create hosting resources. `/health` reports the deployed version, process status and OpenSSL readiness; it does not test OAuth or WHM. Protected-resource metadata advertises all supported scopes.
 
 For deployment, see `BEGINNER-DEPLOYMENT.md`. Use `FRESH-START.md` only when recovering a deleted Auth0 client; enabling creation does not require deleting or recreating a working application.
 
 Reference: [WHM createacct](https://api.docs.cpanel.net/specifications/whm.openapi/account-creation/accounts-createacct) and [WHM ACL chart](https://api.docs.cpanel.net/guides/guide-to-whm-plugins/guide-to-whm-plugins-acl-reference-chart).
 
-## WordPress setup with Softaculous (test account only)
+## WordPress setup across reseller-owned accounts
 
-The adapter uses Softaculous API script 26 at the Jupiter endpoint on the WHM hostname's cPanel HTTPS port 2083. By default, the existing WHM reseller token creates a temporary cPanel session for the configured owned test account via `create_user_session`. The session login cookie is kept only in memory and restricted to the HTTPS cPanel origin. Root access is never requested. If the existing token lacks permission, the gateway fails without changing privileges.
+The adapter uses Softaculous API script 26 through HTTPS cPanel sessions created with the existing WHM reseller token. Each request verifies the account through WHM; no cPanel password or per-account Render variable is needed. `CPANEL_USERNAME` and `CPANEL_PASSWORD` are optional legacy settings for password-mode deployments only.
 
-Set these private Render environment variables:
+Add and grant `whm:wordpress` in the existing Auth0 API, then reauthorize the existing PageSurgeAI WHM Web connection while retaining its current permissions. After deployment, refresh the connection's tools.
 
-| Variable | Test value |
-| --- | --- |
-| `CPANEL_USERNAME` | `authoritysurgeai` |
-| `CPANEL_AUTH_MODE` | Optional; defaults to `whm-session`. Set `password` only to use the original password adapter |
-| `CPANEL_PASSWORD` | Optional; required only in password mode; enter only in Render |
+WordPress tools accept an exact primary `domain` (recommended) or a `username`. Domain requests are resolved through WHM's reseller account inventory and ownership is rechecked before cPanel access. If both are supplied, they must refer to the same primary account. Arbitrary URLs, addon domains and unverified accounts are rejected. This makes one OAuth/MCP connection usable across eligible reseller accounts without storing a username in Render for each site.
 
-The optional variables do not affect existing WHM tools when unset. If you do not know the password, reset only this test account's password through WHM and then enter it securely in Render. Keep WHM and Auth0 credentials unchanged.
+`hosting_get_wordpress_status` reads Softaculous inventory without making changes. `hosting_install_wordpress` requires the exact primary domain, site title, admin email and `confirm: true`; cPanel username is optional and resolved from WHM. Existing files remain protected. HTTPS is checked before installation except for the one explicitly authorized isolated HTTP test domain. New installations request credentials by email to the verified WHM contact address; use WordPress Manager's Login button if needed.
 
-Add `whm:wordpress` to the Auth0 API permissions. With RBAC enabled, grant that permission to the appropriate user/role. Refresh and reauthorize the existing PageSurgeAI WHM Web connection, preserving its client credentials and callback.
-
-`hosting_get_wordpress_status` (read scope) verifies the configured account and reads Softaculous inventory. Run it first to validate cPanel authentication and the actual inventory format. Nonempty unrecognized inventory blocks installation; real server behavior still needs testing.
-
-`hosting_install_wordpress` requires `whm:read whm:wordpress`, username, primary domain, site title, admin email, and `confirm: true`. For this test use `authoritysurgeai` and `mature-yellow-fish.104-219-248-4.cpanel.site`. It verifies ownership and HTTPS, retains Softaculous existing-file protection, installs at the domain root, and generates admin credentials privately. Use WordPress Manager's Login button afterward.
-
-No automatic retries or durable background jobs are provided. A slow installation may finish after a client timeout; inspect WordPress Manager before retrying. WordPress MCP plugin installation is a separate later extension.
+No automatic retries or durable background jobs are provided. A slow operation may finish after a client timeout; inspect WordPress Manager before retrying. WordPress MCP setup is attempted after a confirmed new installation.
 
 Reference: https://www.softaculous.com/docs/api/api/
 
@@ -86,13 +76,11 @@ New installations verify the account's WHM contact email, configure Softaculous 
 The gateway requests `email_password=1` in both email configuration and every new installation request, alongside installation emails to the verified WHM contact. This requests automatic plaintext password inclusion without a manual checkbox. It reports a request, never confirmed password inclusion or inbox delivery. Softaculous versions/provider policies may differ; verify the email on the next authorized fresh installation. Existing sites are not reinstalled or reset for mail testing. The preference can affect later Softaculous notifications for that account. Plaintext password delivery exposes the password to anyone with access to the message.
 
 
-## WordPress MCP bridge (0.6.0)
+## WordPress MCP bridge
 
-`hosting_setup_wordpress_mcp` installs the user-owned WordPress MCP Manager 2.0.5 using a multipart Softaculous upload over the existing WHM-created HTTPS cPanel session. The account remains restricted to `CPANEL_USERNAME`, with reseller ownership and a single primary-domain installation verified. Existing plugins and tokens are preserved; unknown inventory blocks installation. The shipped activation bootstrap configures only the derived bearer hash for the verified `pagesurgeadmin` account and requires HTTPS on the MCP route.
+WordPress MCP Manager 2.0.5 remains a site-local adapter installed separately on each WordPress site. Each installation has its own endpoint and independent Bearer hash. The WHM Gateway is the shared MCP endpoint: it resolves the requested primary domain to its reseller-owned cPanel account, verifies the Softaculous installation, derives that site's token from the existing WHM secret, and routes the request over valid HTTPS. The same connection can therefore manage multiple eligible sites; users do not need a separate ChatGPT connection or Render credential per site.
 
-`hosting_wordpress_read` and `hosting_wordpress_write` use the existing OAuth Web connection, then send a private account/installation-specific Bearer token to WordPress over validated HTTPS. The token is derived with domain-separated HMAC-SHA256 from the existing WHM secret, surviving Render restarts without one environment variable per account. Rotating the WHM secret or manually regenerating the WordPress token invalidates the bridge; reconnecting Auth0 will not repair that mismatch. No Bearer token is exposed in tool results. Both setup and writes require `whm:wordpress`, plus explicit confirmation; reads require `whm:read`.
-
-The isolated HTTP test site can receive the plugin through HTTPS cPanel, but cannot authenticate publicly until its SSL certificate works. `installed_https_required` does not mean connected. Refresh the existing Web connection's discovered tools after deployment. Verify `get_site_info` and current content before user-authorized changes. Never automatically retry uncertain writes. New content should remain draft unless publishing was requested.
+`hosting_setup_wordpress_mcp`, `hosting_wordpress_read` and `hosting_wordpress_write` accept `domain` or `username`. Use the domain in prompts. Existing plugin installations and tokens are preserved. New installs configure the private per-site token during activation. The token is never returned in results. Rotating the WHM secret or manually regenerating a site's token invalidates the bridge. Verify `get_site_info` before making changes, keep new content as drafts unless publication is requested, and inspect state before retrying an uncertain write.
 
 
 ## Account-wide lifecycle tools (0.7.0)
@@ -141,3 +129,14 @@ Automated tests use offline certificate fixtures and mocked WHM writes. They do 
 ## Automatic MCP setup (0.8.2)
 
 New hosting_install_wordpress installations automatically attempt MCP Manager setup and verify get_site_info. Responses retain WordPress status installed with mcp_setup connected or incomplete. Existing sites remain unchanged. Retry incomplete setup using hosting_setup_wordpress_mcp after inspection, never by reinstalling WordPress. See UPDATE-0.8.2.md.
+
+## Domain-based multi-site routing (0.9.0)
+
+WordPress status, installation, email setup and MCP tools can resolve an exact primary domain to a verified reseller-owned account. The username may be omitted; if supplied alongside a domain, both must match. The gateway only accepts domains returned by the existing WHM account inventory and re-verifies the account before any cPanel/WordPress request. Each WordPress installation continues to use its own token. No arbitrary host or URL routing is accepted.
+
+Example prompts:
+- Inspect WordPress on `example.com` without changes.
+- Install WordPress on `example.com`, titled “Example Company,” with administrator email `owner@example.com`.
+- For `example.com`, read the site details, then create a draft About page.
+
+The resolver supports the primary domain at each reseller-owned cPanel account. Addon domains and sites outside this WHM reseller are not routed by this version.

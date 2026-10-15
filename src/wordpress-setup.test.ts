@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { configureWordpressEmail, installWordpress, SoftaculousClient, wordpressStatus } from "./wordpress-setup.js";
+import { configureWordpressEmail, installWordpress, resolveWordPressAccount, SoftaculousClient, wordpressStatus } from "./wordpress-setup.js";
 import { WhmClient } from "./whm-client.js";
 import type { Config } from "./config.js";
 
@@ -8,12 +8,32 @@ const input = { username: "labsite", domain: "lab.example.com", site_title: "Lab
 function account() { return vi.spyOn(WhmClient.prototype, "call").mockResolvedValue({ data: { acct: [{ user: "labsite", owner: "reseller", email: "account@example.com", domain: input.domain, suspended: 0 }] } }); }
 afterEach(() => vi.restoreAllMocks());
 
+it("resolves an exact primary domain to one reseller-owned account and re-verifies ownership", async () => {
+  const calls: string[] = [];
+  vi.spyOn(WhmClient.prototype, "call").mockImplementation(async (name) => {
+    calls.push(name);
+    return { data: { acct: [{ user: "labsite", owner: "reseller", email: "account@example.com", domain: input.domain, suspended: 0 }] } };
+  });
+  const resolved = await resolveWordPressAccount(config, { domain: input.domain });
+  expect(resolved.user).toBe("labsite");
+  expect(calls).toEqual(["listaccts", "accountsummary"]);
+});
+
+it("rejects unknown or mismatched domains before contacting cPanel", async () => {
+  const whm = vi.spyOn(WhmClient.prototype, "call").mockResolvedValue({ data: { acct: [{ user: "labsite", owner: "reseller", domain: input.domain }] } });
+  const cpanel = vi.spyOn(SoftaculousClient.prototype, "request");
+  await expect(resolveWordPressAccount(config, { domain: "attacker.example" })).rejects.toThrow("No hosting account");
+  await expect(resolveWordPressAccount(config, { username: "labsite", domain: "attacker.example" })).rejects.toThrow("do not identify");
+  expect(cpanel).not.toHaveBeenCalled();
+  expect(whm).toHaveBeenCalledTimes(2);
+});
+
 it("requires explicit confirmation and restricts the account, domain, and owner before any installer write", async () => {
   const write = vi.spyOn(SoftaculousClient.prototype, "request");
   const whm = account();
   await expect(installWordpress(config, { ...input, confirm: false } as any)).rejects.toThrow();
   await expect(installWordpress(config, { ...input, username: "otheruser" })).rejects.toThrow("reseller-owned");
-  await expect(installWordpress(config, { ...input, domain: "other.example.com" })).rejects.toThrow("does not match");
+  await expect(installWordpress(config, { ...input, domain: "other.example.com" })).rejects.toThrow("do not identify the same");
   whm.mockResolvedValue({ data: { acct: [{ user: "labsite", owner: "other", domain: input.domain }] } });
   await expect(installWordpress(config, input)).rejects.toThrow("reseller-owned");
   expect(write).not.toHaveBeenCalled();
@@ -40,6 +60,17 @@ it("does not reinstall WordPress already listed on this domain", async () => {
   const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValue({ installations: { "26_1": { softurl: "https://lab.example.com/" } } });
   expect((await installWordpress(config, input)).status).toBe("already_exists");
   expect(api).toHaveBeenCalledTimes(1);
+});
+
+it("allows WordPress installation by exact primary domain without a username", async () => {
+  account();
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 200 }));
+  const api = vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValueOnce({ installations: {} }).mockResolvedValueOnce({ done: true }).mockResolvedValueOnce({ done: true });
+  const { username: _username, ...domainRequest } = input;
+  const result = await installWordpress(config, domainRequest);
+  expect(result).toMatchObject({ status: "installed", username: "labsite", domain: input.domain });
+  expect(api.mock.calls.map(call => call[0])).toEqual(["installations", "email", "software"]);
+  expect(WhmClient.prototype.call).toHaveBeenCalledWith("listaccts");
 });
 
 it("verifies HTTPS and posts only WordPress install fields without enabling overwrite", async () => {

@@ -2,21 +2,22 @@ import { createHash, createHmac } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import type { Config } from "./config.js";
-import { hasErrors, SoftaculousClient, verifiedAccount } from "./wordpress-setup.js";
+import { hasErrors, SoftaculousClient, resolveWordPressAccount, wordpressSiteSelectorFields } from "./wordpress-setup.js";
 
 const SLUG = "wordpress-mcp-manager/wordpress-mcp-manager.php";
 export const wordpressReads = ["get_site_info", "list_wordpress_capabilities", "content_list", "content_get", "media_list", "media_get", "terms_list", "comments_list", "menus_list", "menus_get", "settings_get", "users_list", "users_get", "themes_list", "plugins_list"] as const;
 export const wordpressWrites = ["content_create", "content_update", "content_trash", "content_restore", "content_delete", "content_status", "media_upload_base64", "media_update", "media_delete", "terms_create", "terms_update", "terms_delete", "comments_update", "comments_delete", "menus_create", "menus_update", "menus_delete", "settings_update", "users_create", "users_update", "users_delete", "themes_install_base64", "themes_activate", "themes_delete", "plugins_install_base64", "plugins_activate", "plugins_deactivate", "plugins_delete", "maintenance_flush_rewrite", "maintenance_clear_object_cache"] as const;
-export const wordpressAccountInput = { username: z.string().regex(/^[a-z][a-z0-9]{0,15}$/) };
+export const wordpressAccountInput = wordpressSiteSelectorFields;
 export const wordpressParameters = z.record(z.string(), z.unknown()).default({});
+type WordPressSelector = string | { username?: string; domain?: string };
 
-async function target(config: Config, username: string) {
-  z.object(wordpressAccountInput).strict().parse({ username });
-  const account = await verifiedAccount(config, username);
+async function target(config: Config, selector: WordPressSelector) {
+  const account = await resolveWordPressAccount(config, selector);
+  const username = String(account.user);
   const domain = z.string().toLowerCase().regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/).parse(account.domain);
   const client = new SoftaculousClient(config, username);
   const installations = (await client.installations()).filter(i => new URL(i.url).hostname === domain);
-  if (installations.length !== 1 || !/^26_[0-9]+$/.test(installations[0].id)) throw new Error("Exactly one verified WordPress installation is required on the test account's primary domain.");
+  if (installations.length !== 1 || !/^26_[0-9]+$/.test(installations[0].id)) throw new Error("Exactly one verified WordPress installation is required on the selected account's primary domain.");
   const installation = installations[0];
   const base = new URL(installation.url);
   base.protocol = "https:"; base.port = "";
@@ -96,9 +97,10 @@ async function bundle(t: Target) {
   return pluginZip({ [SLUG]: source + bootstrap });
 }
 
-export async function setupWordpressMcp(config: Config, username: string, confirm: true) {
+export async function setupWordpressMcp(config: Config, selector: WordPressSelector, confirm: true) {
   z.literal(true).parse(confirm);
-  const t = await target(config, username);
+  const t = await target(config, selector);
+  const { username } = t;
   if (await tlsAvailable(t, config)) {
     try { const site = await rpc(config, t, "get_site_info"); return { status: "connected", username, domain: t.domain, site }; } catch { /* Read only. Inspect plugin inventory before deciding whether to install. */ }
   }
@@ -117,12 +119,12 @@ export async function setupWordpressMcp(config: Config, username: string, confir
   return { status: "connected", username, domain: t.domain, installed: true, token_configured: true, site };
 }
 
-export async function wordpressRead(config: Config, username: string, tool: typeof wordpressReads[number], parameters: Record<string, unknown> = {}) {
+export async function wordpressRead(config: Config, selector: WordPressSelector, tool: typeof wordpressReads[number], parameters: Record<string, unknown> = {}) {
   z.enum(wordpressReads).parse(tool);
-  return rpc(config, await target(config, username), tool, parameters);
+  return rpc(config, await target(config, selector), tool, parameters);
 }
-export async function wordpressWrite(config: Config, username: string, tool: typeof wordpressWrites[number], parameters: Record<string, unknown>, confirm: true) {
+export async function wordpressWrite(config: Config, selector: WordPressSelector, tool: typeof wordpressWrites[number], parameters: Record<string, unknown>, confirm: true) {
   z.enum(wordpressWrites).parse(tool); z.literal(true).parse(confirm);
   // Confirmation is controlled by the gateway, not a nested parameter.
-  return rpc(config, await target(config, username), tool, { ...parameters, confirm: true });
+  return rpc(config, await target(config, selector), tool, { ...parameters, confirm: true });
 }
