@@ -102,6 +102,14 @@ it("preserves an existing plugin/token and rejects unknown inventory", async () 
   await expect(setupWordpressMcp(config, "labsite", true)).rejects.toThrow("inventory");
   expect(api).toHaveBeenCalledTimes(2);
 });
+it("reports only safe response-shape diagnostics for unsupported plugin inventory", async () => {
+  target(); vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("TLS"));
+  vi.spyOn(SoftaculousClient.prototype, "request").mockResolvedValue({ data: { plugins: ["private-value"] } });
+  let message = "";
+  await setupWordpressMcp(config, "labsite", true).catch((error: unknown) => { message = error instanceof Error ? error.message : String(error); });
+  expect(message).toMatch(/reason=plugins_field_missing; fields=data; plugins_type=undefined; error_type=undefined/);
+  expect(message).not.toContain("private-value");
+});
 it("never retries uncertain writes", async () => {
   target(); const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 401 })).mockRejectedValueOnce(new Error("private-secret"));
   await expect(wordpressWrite(config, "labsite", "content_update", { id: 5 }, true)).rejects.toThrow("not confirmed");
