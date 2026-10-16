@@ -4,7 +4,6 @@ import type { Config } from "./config.js";
 import { extractAccounts, verifyOwnedAccount, WhmClient } from "./whm-client.js";
 
 export const WORDPRESS_SCOPE = "whm:wordpress";
-export const WORDPRESS_CREDENTIAL_HANDOFF = Symbol("private WordPress credential handoff");
 const cpanelUsernameSchema = z.string().regex(/^[a-z][a-z0-9]{0,15}$/);
 export const wordpressDomainSchema = z.string().trim().toLowerCase().max(253).regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/);
 export const wordpressSiteSelectorFields = {
@@ -251,9 +250,7 @@ export async function installWordpress(config: Config, input: InstallRequest) {
   // Ignore raw API data, which may contain admin and database passwords.
   const result = { status: "installed" as const, username, domain: request.domain, site_url: `${protocol}://${request.domain}/`,
     admin_url: `${protocol}://${request.domain}/wp-admin/`, admin_username: "pagesurgeadmin", mcp_plugin_installed: false,
-    credential_delivery: "Installation email requested through Softaculous. Password inclusion requested automatically for this installation. Use WordPress Manager Login if needed. No password is returned in chat.",
+    credential_delivery: "Softaculous installation notification requested with password inclusion enabled. Inbox delivery is not verified.",
     email: { recipient, status: "requested", inbox_delivery: "not_verified", password_inclusion: "requested" } };
-  // Private, non-enumerable handoff: it is not copied by object spread or JSON serialization.
-  Object.defineProperty(result, WORDPRESS_CREDENTIAL_HANDOFF, { value: { login: "pagesurgeadmin", password } });
   return result;
 }

@@ -2,15 +2,19 @@
 Contributors: pagesurgeai
 Requires at least: 6.5
 Requires PHP: 8.0
-Stable tag: 2.0.6
+Stable tag: 2.0.7
 License: GPLv2 or later
 
 Securely manage WordPress through a self-contained Streamable HTTP MCP server.
 
 == Changelog ==
+= 2.0.7 =
+* Add the confirmed users_password_reset_email MCP action using WordPress's native password recovery flow.
+* Send only a one-time password reset link to the user's registered email; never email or return passwords.
+* Remove the plaintext installation credential email endpoint.
+
 = 2.0.6 =
-* Add private one-time installation credential email endpoint for the verified hosting contact.
-* Report only whether WordPress accepted the message for sending; inbox delivery is not confirmed.
+* Earlier builds included a one-time installation credential email endpoint; removed in 2.0.7 because it sent passwords by email.
 
 = 2.0.5 =
 * Loaded the WordPress administrative file and theme libraries required by REST-based installers.
@@ -32,7 +36,7 @@ Securely manage WordPress through a self-contained Streamable HTTP MCP server.
 Posts and pages; media; categories, tags and custom taxonomies; comments; menus; selected site settings; users; themes; plugins; permalink rules; object cache; site diagnostics.
 
 == Security ==
-The plugin uses normal WordPress REST authentication. Create a dedicated administrator or editor account and an Application Password. Every action checks the corresponding native WordPress capability. Publishing and high-risk operations require confirm=true. Remote self-deactivation and self-deletion are blocked.
+The plugin uses normal WordPress REST authentication. Create a dedicated administrator or editor account and an Application Password. Every action checks the corresponding native WordPress capability. Publishing, high-risk operations and password reset emails require confirm=true. Password reset emails use WordPress's native one-time reset flow and go to the selected user's registered email. Passwords are never emailed or returned. Remote self-deactivation and self-deletion are blocked.
 
 == Installation ==
 1. Upload and activate the plugin ZIP in WordPress.

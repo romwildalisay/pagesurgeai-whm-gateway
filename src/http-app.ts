@@ -20,7 +20,7 @@ export function createGatewayApp(config: Config, verifier?: (value: string | und
 
   const openssl = spawnSync("openssl", ["version"], { timeout: 2000, maxBuffer: 1024, shell: false });
   const sslValidatorReady = openssl.status === 0 && /^OpenSSL 3\./.test(openssl.stdout?.toString() ?? "");
-  app.get("/health", (_req, res) => res.json({ status: "ok", name: "pagesurgeai-whm-gateway", version: "0.9.3", mode: "account-lifecycle-wordpress-multisite-bandwidth-ssl", auth: "oauth2", checks: { process: "ok", oauth_link: "not_checked", whm: "not_checked", wordpress: "not_checked", ssl_validator: sslValidatorReady ? "ready" : "unavailable" } }));
+  app.get("/health", (_req, res) => res.json({ status: "ok", name: "pagesurgeai-whm-gateway", version: "0.9.4", mode: "account-lifecycle-wordpress-multisite-bandwidth-ssl", auth: "oauth2", checks: { process: "ok", oauth_link: "not_checked", whm: "not_checked", wordpress: "not_checked", ssl_validator: sslValidatorReady ? "ready" : "unavailable" } }));
 
   app.get(["/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp"], (_req, res) => res.json({
     resource: `${config.PUBLIC_BASE_URL}/mcp`,

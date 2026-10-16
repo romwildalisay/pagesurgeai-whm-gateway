@@ -1,25 +1,21 @@
 import { afterEach, expect, it, vi } from "vitest";
 import type { Config } from "./config.js";
 vi.mock("./wordpress-setup.js", async (importOriginal) => ({ ...await importOriginal<typeof import("./wordpress-setup.js")>(), installWordpress: vi.fn() }));
-vi.mock("./wordpress-mcp.js", () => ({ setupWordpressMcp: vi.fn(), sendWordPressInstallCredentials: vi.fn() }));
-import { installWordpress, WORDPRESS_CREDENTIAL_HANDOFF } from "./wordpress-setup.js";
-import { setupWordpressMcp, sendWordPressInstallCredentials } from "./wordpress-mcp.js";
+vi.mock("./wordpress-mcp.js", () => ({ setupWordpressMcp: vi.fn() }));
+import { installWordpress } from "./wordpress-setup.js";
+import { setupWordpressMcp } from "./wordpress-mcp.js";
 import { installWordpressWithMcp } from "./wordpress-install.js";
 const config = {} as Config;
 const input = { username: "labsite", domain: "example.com", site_title: "Lab", admin_email: "owner@example.com", confirm: true as const };
 afterEach(() => vi.resetAllMocks());
 function installed() {
-  const response: any = { status: "installed", email: { status: "requested", recipient: "owner@example.com" } };
-  Object.defineProperty(response, WORDPRESS_CREDENTIAL_HANDOFF, { value: { login: "pagesurgeadmin", password: "private-password" } });
-  vi.mocked(installWordpress).mockResolvedValue(response);
+  vi.mocked(installWordpress).mockResolvedValue({ status: "installed", email: { status: "requested", recipient: "owner@example.com" } } as any);
 }
 it("sets up and verifies MCP only after confirmed new WordPress success", async () => {
   installed(); vi.mocked(setupWordpressMcp).mockResolvedValue({ status: "connected", installed: true } as any);
-  vi.mocked(sendWordPressInstallCredentials).mockResolvedValue({ status: "queued" });
   const result = await installWordpressWithMcp(config, input);
-  expect(result).toMatchObject({ status: "installed", mcp_setup: "connected", mcp_plugin_installed: true, email: { status: "requested" }, credential_email: { status: "queued", inbox_delivery: "not_verified" } });
-  expect(JSON.stringify(result)).not.toContain("private-password");
-  expect(sendWordPressInstallCredentials).toHaveBeenCalledWith(config, { username: "labsite", domain: "example.com" }, { login: "pagesurgeadmin", password: "private-password" });
+  expect(result).toMatchObject({ status: "installed", mcp_setup: "connected", mcp_plugin_installed: true, email: { status: "requested" } });
+  expect(JSON.stringify(result)).not.toContain("password");
   expect(setupWordpressMcp).toHaveBeenCalledWith(config, { username: "labsite", domain: "example.com" }, true);
   expect(vi.mocked(installWordpress).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(setupWordpressMcp).mock.invocationCallOrder[0]);
 });
@@ -37,7 +33,6 @@ it("does not set up MCP when installation is unconfirmed", async () => {
 it.each(["installed_https_required", "existing_plugin_needs_connection"])("preserves installed status for %s", async status => {
   installed(); vi.mocked(setupWordpressMcp).mockResolvedValue({ status, installed: true } as any);
   expect(await installWordpressWithMcp(config, input)).toMatchObject({ status: "installed", mcp_setup: "incomplete", mcp: { status } });
-  expect(sendWordPressInstallCredentials).not.toHaveBeenCalled();
 });
 it("contains uncertain MCP errors without leaking secrets or repeating installation", async () => {
   installed(); vi.mocked(setupWordpressMcp).mockRejectedValue(new Error("secret-token"));
