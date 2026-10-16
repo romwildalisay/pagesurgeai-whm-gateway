@@ -2,12 +2,16 @@
 Contributors: pagesurgeai
 Requires at least: 6.5
 Requires PHP: 8.0
-Stable tag: 2.0.5
+Stable tag: 2.0.6
 License: GPLv2 or later
 
 Securely manage WordPress through a self-contained Streamable HTTP MCP server.
 
 == Changelog ==
+= 2.0.6 =
+* Add private one-time installation credential email endpoint for the verified hosting contact.
+* Report only whether WordPress accepted the message for sending; inbox delivery is not confirmed.
+
 = 2.0.5 =
 * Loaded the WordPress administrative file and theme libraries required by REST-based installers.
 * Fixed fatal undefined-function errors for temporary files and theme cache refreshes.

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WordPress MCP Manager
  * Description: Self-contained Streamable HTTP MCP server for securely managing WordPress from ChatGPT.
- * Version: 2.0.5
+ * Version: 2.0.6
  * Requires at least: 6.5
  * Requires PHP: 8.0
  * Author: PageSurgeAI
@@ -11,7 +11,7 @@
 if (!defined('ABSPATH')) exit;
 
 final class WPMCP_Manager {
- const NS='wpmcp/v1'; const VERSION='2.0.5'; const MCP_VERSION='2025-06-18';
+ const NS='wpmcp/v1'; const VERSION='2.0.6'; const MCP_VERSION='2025-06-18';
  private static $instance;
  public static function instance(){return self::$instance ?: self::$instance=new self();}
  private function __construct(){add_action('rest_api_init',[$this,'routes']);add_action('admin_menu',[$this,'admin_menu']);add_action('admin_post_wpmcp_regenerate_token',[$this,'regenerate_token']);}
@@ -20,6 +20,7 @@ final class WPMCP_Manager {
   register_rest_route(self::NS,'/capabilities',['methods'=>'GET','callback'=>[$this,'capabilities'],'permission_callback'=>[$this,'authenticated']]);
   register_rest_route(self::NS,'/execute',['methods'=>'POST','callback'=>[$this,'execute'],'permission_callback'=>[$this,'authenticated'],'args'=>['action'=>['required'=>true,'type'=>'string'],'confirm'=>['type'=>'boolean','default'=>false]]]);
   register_rest_route(self::NS,'/mcp',['methods'=>'POST','callback'=>[$this,'mcp'],'permission_callback'=>[$this,'mcp_authenticated']]);
+  register_rest_route(self::NS,'/credentials',['methods'=>'POST','callback'=>[$this,'email_install_credentials'],'permission_callback'=>[$this,'mcp_authenticated']]);
  }
  public function authenticated(){return is_user_logged_in();}
  public function mcp_authenticated(){
@@ -29,6 +30,17 @@ final class WPMCP_Manager {
   if(!$header&&function_exists('getallheaders')){$h=getallheaders();$header=trim($h['Authorization']??$h['authorization']??'');}
   if(preg_match('/^Bearer\s+(.+)$/i',$header,$m)){$hash=(string)get_option('wpmcp_token_hash','');if($hash&&hash_equals($hash,hash('sha256',trim($m[1])))){$uid=(int)get_option('wpmcp_service_user',0);if($uid&&get_user_by('id',$uid)){wp_set_current_user($uid);return true;}}}
   return new WP_Error('unauthorized','A valid MCP bearer token is required.',['status'=>401]);
+ }
+ public function email_install_credentials(WP_REST_Request $r){
+  $recipient=(string)get_option('wpmcp_credential_recipient','');
+  $p=$this->input($r);$login=sanitize_user($p['login']??'');$password=(string)($p['password']??'');
+  if(!$recipient||!is_email($recipient)||!$login||$password===''||strlen($password)>1024)return new WP_Error('invalid_credentials','Credential email could not be prepared.',['status'=>400]);
+  if(get_option('wpmcp_credentials_email_sent'))return new WP_Error('already_sent','The installation credential email was already queued.',['status'=>409]);
+  $subject='WordPress login details for '.wp_specialchars_decode(get_bloginfo('name'),ENT_QUOTES);
+  $message="WordPress has been installed.\n\nSite: ".home_url('/')."\nLogin: ".admin_url()."\nUsername: ".$login."\nPassword: ".$password."\n\nPlease sign in and change this password after your first login.\n";
+  if(!wp_mail($recipient,$subject,$message))return new WP_Error('email_not_queued','WordPress could not queue the credential email. Check the site mail configuration.',['status'=>502]);
+  add_option('wpmcp_credentials_email_sent',time(),'','no');
+  return $this->ok(['queued'=>true]);
  }
  private function need($cap){if(!current_user_can($cap))return new WP_Error('forbidden','Your WordPress user lacks '.$cap.'.',['status'=>403]);return true;}
  private function confirmed($r,$label){if(!$r->get_param('confirm'))return new WP_Error('confirmation_required','Set confirm=true to '.$label.'.',['status'=>409]);return true;}

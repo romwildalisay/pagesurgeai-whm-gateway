@@ -5,6 +5,7 @@ import type { Config } from "./config.js";
 import { hasErrors, SoftaculousClient, resolveWordPressAccount, wordpressSiteSelectorFields } from "./wordpress-setup.js";
 
 const SLUG = "wordpress-mcp-manager/wordpress-mcp-manager.php";
+const PLUGIN_VERSION = "2.0.6";
 export const wordpressReads = ["get_site_info", "list_wordpress_capabilities", "content_list", "content_get", "media_list", "media_get", "terms_list", "comments_list", "menus_list", "menus_get", "settings_get", "users_list", "users_get", "themes_list", "plugins_list"] as const;
 export const wordpressWrites = ["content_create", "content_update", "content_trash", "content_restore", "content_delete", "content_status", "media_upload_base64", "media_update", "media_delete", "terms_create", "terms_update", "terms_delete", "comments_update", "comments_delete", "menus_create", "menus_update", "menus_delete", "settings_update", "users_create", "users_update", "users_delete", "themes_install_base64", "themes_activate", "themes_delete", "plugins_install_base64", "plugins_activate", "plugins_deactivate", "plugins_delete", "maintenance_flush_rewrite", "maintenance_clear_object_cache"] as const;
 export const wordpressAccountInput = wordpressSiteSelectorFields;
@@ -28,7 +29,8 @@ async function target(config: Config, selector: WordPressSelector) {
   // Domain separation keeps the WHM token private. The derived bearer survives
   // Render restarts without one credential/environment variable per account.
   const token = "wpmcp_" + createHmac("sha256", config.WHM_API_TOKEN).update(JSON.stringify(["pagesurgeai-wordpress-mcp-v1", config.WHM_BASE_URL, config.WHM_USERNAME, username, domain, installation.id])).digest("hex");
-  return { client, installation, endpoint, token, domain, username };
+  const contactEmail = z.string().trim().email().max(254).parse(account.email);
+  return { client, installation, endpoint, token, domain, username, contactEmail };
 }
 type Target = Awaited<ReturnType<typeof target>>;
 
@@ -74,7 +76,7 @@ async function rpc(config: Config, t: Target, name: string, args: Record<string,
   if (name === "get_site_info") {
     let site: URL;
     try { site = new URL(String(result.url)); } catch { throw new Error("WordPress site identity was not verified."); }
-    if (site.hostname !== t.domain || site.pathname !== new URL(t.installation.url).pathname || result.plugin_version !== "2.0.5") throw new Error("WordPress site identity or MCP plugin version did not match the configured installation.");
+    if (site.hostname !== t.domain || site.pathname !== new URL(t.installation.url).pathname || result.plugin_version !== PLUGIN_VERSION) throw new Error("WordPress site identity or MCP plugin version did not match the configured installation.");
   }
   return result;
 }
@@ -106,7 +108,8 @@ async function bundle(t: Target) {
   const hash = createHash("sha256").update(t.token).digest("hex");
   // Only the hash is shipped over HTTPS cPanel. The admin password is untouched.
   // Never overwrite a previously configured token during activation.
-  const bootstrap = `\n// PageSurgeAI gateway bootstrap: derived bearer hash only.\nregister_activation_hook(__FILE__, function () {\n    if (get_option('wpmcp_token_hash')) return;\n    $user = get_user_by('login', 'pagesurgeadmin');\n    if (!$user || !$user->has_cap('manage_options')) wp_die('PageSurgeAI administrator could not be verified.');\n    update_option('wpmcp_token_hash', '${hash}', false);\n    update_option('wpmcp_service_user', $user->ID, false);\n});\nadd_filter('rest_pre_dispatch', function ($result, $server, $request) {\n    if ($request->get_route() === '/wpmcp/v1/mcp' && !is_ssl()) return new WP_Error('https_required', 'HTTPS is required for MCP authentication.', array('status' => 403));\n    return $result;\n}, 10, 3);\n`;
+  const emailLiteral = `'${t.contactEmail.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
+  const bootstrap = `\n// PageSurgeAI gateway bootstrap: derived bearer hash and verified contact allowlist.\nregister_activation_hook(__FILE__, function () {\n    if (get_option('wpmcp_token_hash')) return;\n    $user = get_user_by('login', 'pagesurgeadmin');\n    if (!$user || !$user->has_cap('manage_options')) wp_die('PageSurgeAI administrator could not be verified.');\n    update_option('wpmcp_token_hash', '${hash}', false);\n    update_option('wpmcp_service_user', $user->ID, false);\n    update_option('wpmcp_credential_recipient', ${emailLiteral}, false);\n});\nadd_filter('rest_pre_dispatch', function ($result, $server, $request) {\n    if (in_array($request->get_route(), ['/wpmcp/v1/mcp', '/wpmcp/v1/credentials'], true) && !is_ssl()) return new WP_Error('https_required', 'HTTPS is required for MCP authentication.', array('status' => 403));\n    return $result;\n}, 10, 3);\n`;
   return pluginZip({ [SLUG]: source + bootstrap });
 }
 
@@ -128,12 +131,36 @@ export async function setupWordpressMcp(config: Config, selector: WordPressSelec
   if (JSON.stringify(plugins).includes("wordpress-mcp-manager")) return { status: "existing_plugin_needs_connection", username, domain: t.domain, installed: true, token_configured: "not_verified", connection: "not_verified", next_step: "Verify HTTPS and the existing plugin token; the gateway will not overwrite or rotate an existing token." };
   const form = new FormData();
   form.set("insid", t.installation.id); form.set("type", "plugins"); form.set("activate", "1");
-  form.set("custom_file", new Blob([new Uint8Array(await bundle(t))], { type: "application/zip" }), "wordpress-mcp-manager-2.0.5-gateway.zip");
+  form.set("custom_file", new Blob([new Uint8Array(await bundle(t))], { type: "application/zip" }), `wordpress-mcp-manager-${PLUGIN_VERSION}-gateway.zip`);
   const response = await t.client.request("wordpress", form);
   if (hasErrors(response.error) || ![true, 1, "1"].includes(response.done)) throw new Error("WordPress MCP installation was not confirmed. Inspect installed plugins before retrying; no token is exposed.");
-  if (!await tlsAvailable(t, config)) return { status: "installed_https_required", username, domain: t.domain, plugin_version: "2.0.5", installed: true, activation: "requested", token_configuration: "activation_hook_requested", connection: "blocked_by_https", next_step: "Install a valid SSL certificate, then run setup again to verify the connection. No Bearer token was sent to the public HTTP site." };
+  if (!await tlsAvailable(t, config)) return { status: "installed_https_required", username, domain: t.domain, plugin_version: PLUGIN_VERSION, installed: true, activation: "requested", token_configuration: "activation_hook_requested", connection: "blocked_by_https", next_step: "Install a valid SSL certificate, then run setup again to verify the connection. No Bearer token was sent to the public HTTP site." };
   const site = await rpc(config, t, "get_site_info");
   return { status: "connected", username, domain: t.domain, installed: true, token_configured: true, site };
+}
+
+/** Send the install password once to the WHM-verified contact through WordPress mail. */
+export async function sendWordPressInstallCredentials(config: Config, selector: WordPressSelector, credentials: { login: string; password: string }) {
+  const t = await target(config, selector);
+  if (!await tlsAvailable(t, config)) return { status: "not_queued" as const };
+  const endpoint = new URL("index.php", t.endpoint);
+  endpoint.searchParams.set("rest_route", "/wpmcp/v1/credentials");
+  let response: Response;
+  try {
+    response = await fetch(endpoint, { method: "POST", redirect: "manual", headers: { Authorization: `Bearer ${t.token}`, "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify(credentials), signal: AbortSignal.timeout(config.WHM_TIMEOUT_MS) });
+  } catch { return { status: "unknown" as const }; }
+  if (!response.ok) {
+    try {
+      const body = await response.json() as any;
+      if (body?.code === "email_not_queued") return { status: "not_queued" as const };
+      if (body?.code === "already_sent") return { status: "already_queued" as const };
+    } catch { /* The request may have been processed; do not claim a definite failure. */ }
+    return { status: "unknown" as const };
+  }
+  try {
+    const body = await response.json() as any;
+    return body?.success === true && body?.queued === true ? { status: "queued" as const } : { status: "unknown" as const };
+  } catch { return { status: "unknown" as const }; }
 }
 
 export async function wordpressRead(config: Config, selector: WordPressSelector, tool: typeof wordpressReads[number], parameters: Record<string, unknown> = {}) {
