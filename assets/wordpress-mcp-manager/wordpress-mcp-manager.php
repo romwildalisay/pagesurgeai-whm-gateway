@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WordPress MCP Manager
  * Description: Self-contained Streamable HTTP MCP server for securely managing WordPress from ChatGPT.
- * Version: 2.0.6
+ * Version: 2.0.7
  * Requires at least: 6.5
  * Requires PHP: 8.0
  * Author: PageSurgeAI
@@ -11,7 +11,7 @@
 if (!defined('ABSPATH')) exit;
 
 final class WPMCP_Manager {
- const NS='wpmcp/v1'; const VERSION='2.0.6'; const MCP_VERSION='2025-06-18';
+ const NS='wpmcp/v1'; const VERSION='2.0.7'; const MCP_VERSION='2025-06-18';
  private static $instance;
  public static function instance(){return self::$instance ?: self::$instance=new self();}
  private function __construct(){add_action('rest_api_init',[$this,'routes']);add_action('admin_menu',[$this,'admin_menu']);add_action('admin_post_wpmcp_regenerate_token',[$this,'regenerate_token']);}
@@ -20,7 +20,6 @@ final class WPMCP_Manager {
   register_rest_route(self::NS,'/capabilities',['methods'=>'GET','callback'=>[$this,'capabilities'],'permission_callback'=>[$this,'authenticated']]);
   register_rest_route(self::NS,'/execute',['methods'=>'POST','callback'=>[$this,'execute'],'permission_callback'=>[$this,'authenticated'],'args'=>['action'=>['required'=>true,'type'=>'string'],'confirm'=>['type'=>'boolean','default'=>false]]]);
   register_rest_route(self::NS,'/mcp',['methods'=>'POST','callback'=>[$this,'mcp'],'permission_callback'=>[$this,'mcp_authenticated']]);
-  register_rest_route(self::NS,'/credentials',['methods'=>'POST','callback'=>[$this,'email_install_credentials'],'permission_callback'=>[$this,'mcp_authenticated']]);
  }
  public function authenticated(){return is_user_logged_in();}
  public function mcp_authenticated(){
@@ -30,17 +29,6 @@ final class WPMCP_Manager {
   if(!$header&&function_exists('getallheaders')){$h=getallheaders();$header=trim($h['Authorization']??$h['authorization']??'');}
   if(preg_match('/^Bearer\s+(.+)$/i',$header,$m)){$hash=(string)get_option('wpmcp_token_hash','');if($hash&&hash_equals($hash,hash('sha256',trim($m[1])))){$uid=(int)get_option('wpmcp_service_user',0);if($uid&&get_user_by('id',$uid)){wp_set_current_user($uid);return true;}}}
   return new WP_Error('unauthorized','A valid MCP bearer token is required.',['status'=>401]);
- }
- public function email_install_credentials(WP_REST_Request $r){
-  $recipient=(string)get_option('wpmcp_credential_recipient','');
-  $p=$this->input($r);$login=sanitize_user($p['login']??'');$password=(string)($p['password']??'');
-  if(!$recipient||!is_email($recipient)||!$login||$password===''||strlen($password)>1024)return new WP_Error('invalid_credentials','Credential email could not be prepared.',['status'=>400]);
-  if(get_option('wpmcp_credentials_email_sent'))return new WP_Error('already_sent','The installation credential email was already queued.',['status'=>409]);
-  $subject='WordPress login details for '.wp_specialchars_decode(get_bloginfo('name'),ENT_QUOTES);
-  $message="WordPress has been installed.\n\nSite: ".home_url('/')."\nLogin: ".admin_url()."\nUsername: ".$login."\nPassword: ".$password."\n\nPlease sign in and change this password after your first login.\n";
-  if(!wp_mail($recipient,$subject,$message))return new WP_Error('email_not_queued','WordPress could not queue the credential email. Check the site mail configuration.',['status'=>502]);
-  add_option('wpmcp_credentials_email_sent',time(),'','no');
-  return $this->ok(['queued'=>true]);
  }
  private function need($cap){if(!current_user_can($cap))return new WP_Error('forbidden','Your WordPress user lacks '.$cap.'.',['status'=>403]);return true;}
  private function confirmed($r,$label){if(!$r->get_param('confirm'))return new WP_Error('confirmation_required','Set confirm=true to '.$label.'.',['status'=>409]);return true;}
@@ -56,7 +44,7 @@ final class WPMCP_Manager {
  }
  public function site(){global $wp_version;return $this->ok(['name'=>get_bloginfo('name'),'url'=>home_url('/'),'admin_url'=>admin_url(),'wordpress_version'=>$wp_version,'php_version'=>PHP_VERSION,'plugin_version'=>self::VERSION,'active_theme'=>wp_get_theme()->get('Name'),'multisite'=>is_multisite(),'rest_url'=>rest_url(self::NS),'mcp_endpoint'=>rest_url(self::NS.'/mcp')]);}
  public function capabilities(){
-  $actions=['content.list','content.get','content.create','content.update','content.trash','content.restore','content.delete','content.status','media.list','media.get','media.upload_base64','media.update','media.delete','terms.list','terms.create','terms.update','terms.delete','comments.list','comments.update','comments.delete','menus.list','menus.get','menus.create','menus.update','menus.delete','settings.get','settings.update','users.list','users.get','users.create','users.update','users.delete','themes.list','themes.install_base64','themes.activate','themes.delete','plugins.list','plugins.install_base64','plugins.activate','plugins.deactivate','plugins.delete','maintenance.flush_rewrite','maintenance.clear_object_cache'];
+  $actions=['content.list','content.get','content.create','content.update','content.trash','content.restore','content.delete','content.status','media.list','media.get','media.upload_base64','media.update','media.delete','terms.list','terms.create','terms.update','terms.delete','comments.list','comments.update','comments.delete','menus.list','menus.get','menus.create','menus.update','menus.delete','settings.get','settings.update','users.list','users.get','users.create','users.update','users.delete','users.password_reset_email','themes.list','themes.install_base64','themes.activate','themes.delete','plugins.list','plugins.install_base64','plugins.activate','plugins.deactivate','plugins.delete','maintenance.flush_rewrite','maintenance.clear_object_cache'];
   return $this->ok(['actions'=>$actions,'safety'=>'Destructive and privileged actions require confirm=true and native WordPress capabilities.']);
  }
  public function execute(WP_REST_Request $r){
@@ -66,7 +54,7 @@ final class WPMCP_Manager {
    'terms.list'=>'terms_list','terms.create'=>'terms_create','terms.update'=>'terms_update','terms.delete'=>'terms_delete',
    'comments.list'=>'comments_list','comments.update'=>'comments_update','comments.delete'=>'comments_delete',
    'menus.list'=>'menus_list','menus.get'=>'menus_get','menus.create'=>'menus_create','menus.update'=>'menus_update','menus.delete'=>'menus_delete',
-   'settings.get'=>'settings_get','settings.update'=>'settings_update','users.list'=>'users_list','users.get'=>'users_get','users.create'=>'users_create','users.update'=>'users_update','users.delete'=>'users_delete',
+   'settings.get'=>'settings_get','settings.update'=>'settings_update','users.list'=>'users_list','users.get'=>'users_get','users.create'=>'users_create','users.update'=>'users_update','users.delete'=>'users_delete','users.password_reset_email'=>'users_password_reset_email',
    'themes.list'=>'themes_list','themes.install_base64'=>'themes_install','themes.activate'=>'themes_activate','themes.delete'=>'themes_delete',
    'plugins.list'=>'plugins_list','plugins.install_base64'=>'plugins_install','plugins.activate'=>'plugins_activate','plugins.deactivate'=>'plugins_deactivate','plugins.delete'=>'plugins_delete',
    'maintenance.flush_rewrite'=>'flush_rewrite','maintenance.clear_object_cache'=>'clear_cache'];
@@ -109,6 +97,22 @@ final class WPMCP_Manager {
  private function users_create($r,$p){$c=$this->need('create_users');if(is_wp_error($c))return $c;$ok=$this->confirmed($r,'create this user');if(is_wp_error($ok))return $ok;$id=wp_insert_user(['user_login'=>sanitize_user($p['login']??''),'user_email'=>sanitize_email($p['email']??''),'user_pass'=>(string)($p['password']??wp_generate_password(24,true,true)),'display_name'=>sanitize_text_field($p['name']??''),'role'=>sanitize_key($p['role']??get_option('default_role'))]);return is_wp_error($id)?$id:$this->ok(['id'=>$id]);}
  private function users_update($r,$p){$id=(int)($p['id']??0);if(!current_user_can('edit_user',$id))return new WP_Error('forbidden','Cannot edit this user.',['status'=>403]);$ok=$this->confirmed($r,'change this user');if(is_wp_error($ok))return $ok;$d=['ID'=>$id];foreach(['user_email'=>'email','display_name'=>'name','user_pass'=>'password','role'=>'role'] as $field=>$key)if(isset($p[$key]))$d[$field]=$key==='email'?sanitize_email($p[$key]):($key==='role'?sanitize_key($p[$key]):sanitize_text_field($p[$key]));$x=wp_update_user($d);return is_wp_error($x)?$x:$this->ok(['id'=>$id]);}
  private function users_delete($r,$p){$id=(int)($p['id']??0);if(!current_user_can('delete_user',$id))return new WP_Error('forbidden','Cannot delete this user.',['status'=>403]);if($id===get_current_user_id())return new WP_Error('self_delete_blocked','Self-deletion is blocked.',['status'=>409]);$ok=$this->confirmed($r,'permanently delete this user');if(is_wp_error($ok))return $ok;require_once ABSPATH.'wp-admin/includes/user.php';return wp_delete_user($id,(int)($p['reassign']??0))?$this->ok(['deleted_id'=>$id]):new WP_Error('failed','Could not delete user.',['status'=>500]);}
+ private function users_password_reset_email($r,$p){
+  if(array_key_exists('password',$p))return new WP_Error('password_not_accepted','This action sends a password reset link and never accepts or emails a password.',['status'=>400]);
+  $login=sanitize_user($p['login']??'');
+  if($login===''||$login!==($p['login']??''))return new WP_Error('invalid_login','Provide an exact WordPress username.',['status'=>400]);
+  $user=get_user_by('login',$login);
+  if(!$user)return new WP_Error('user_not_found','WordPress user not found.',['status'=>404]);
+  if(!current_user_can('edit_user',(int)$user->ID))return new WP_Error('forbidden','You cannot send a password reset email for this user.',['status'=>403]);
+  $ok=$this->confirmed($r,'send this user a password reset email');if(is_wp_error($ok))return $ok;
+  if(!is_email($user->user_email))return new WP_Error('invalid_user_email','The WordPress account does not have a valid email address.',['status'=>400]);
+  $rate_limit_key='wpmcp_reset_email_'.(int)$user->ID;
+  if(get_transient($rate_limit_key))return new WP_Error('reset_email_rate_limited','A reset email was requested recently. Wait five minutes before requesting another.',['status'=>429]);
+  $sent=retrieve_password($user->user_login);
+  if(is_wp_error($sent)||$sent!==true)return new WP_Error('reset_email_failed','WordPress could not queue the password reset email. Check the site mail configuration.',['status'=>502]);
+  set_transient($rate_limit_key,1,5*MINUTE_IN_SECONDS);
+  return $this->ok(['user_id'=>(int)$user->ID,'reset_email_requested'=>true,'inbox_delivery'=>'not_verified']);
+ }
  private function themes_list($r,$p){$c=$this->need('switch_themes');if(is_wp_error($c))return $c;$active=wp_get_theme();$items=[];foreach(wp_get_themes() as $slug=>$t)$items[]=['slug'=>$slug,'name'=>$t->get('Name'),'version'=>$t->get('Version'),'active'=>$active->get_stylesheet()===$slug];return $this->ok(['items'=>$items]);}
  private function write_zip($p,$kind){$raw=base64_decode((string)($p['base64_zip']??''),true);if($raw===false||strlen($raw)>30*1024*1024)return new WP_Error('bad_archive','Invalid base64 or archive exceeds 30 MB.',['status'=>400]);if(strlen($raw)<4||substr($raw,0,2)!=='PK')return new WP_Error('bad_archive','The uploaded data is not a ZIP archive.',['status'=>400]);require_once ABSPATH.'wp-admin/includes/file.php';$file=wp_tempnam(sanitize_file_name($p['filename']??$kind.'.zip'));if(!$file||file_put_contents($file,$raw)===false)return new WP_Error('write_failed','Could not write temporary archive.',['status'=>500]);return $file;}
  private function install_zip($file,$kind,$force=false){
@@ -164,15 +168,15 @@ final class WPMCP_Manager {
  private function flush_rewrite($r,$p){$c=$this->need('manage_options');if(is_wp_error($c))return $c;$ok=$this->confirmed($r,'flush permalink rules');if(is_wp_error($ok))return $ok;flush_rewrite_rules(false);return $this->ok(['flushed'=>true]);}
  private function clear_cache($r,$p){$c=$this->need('manage_options');if(is_wp_error($c))return $c;$ok=$this->confirmed($r,'clear the object cache');if(is_wp_error($ok))return $ok;return $this->ok(['flushed'=>(bool)wp_cache_flush()]);}
 
- private function action_names(){return ['content.list','content.get','content.create','content.update','content.trash','content.restore','content.delete','content.status','media.list','media.get','media.upload_base64','media.update','media.delete','terms.list','terms.create','terms.update','terms.delete','comments.list','comments.update','comments.delete','menus.list','menus.get','menus.create','menus.update','menus.delete','settings.get','settings.update','users.list','users.get','users.create','users.update','users.delete','themes.list','themes.install_base64','themes.activate','themes.delete','plugins.list','plugins.install_base64','plugins.activate','plugins.deactivate','plugins.delete','maintenance.flush_rewrite','maintenance.clear_object_cache'];}
+ private function action_names(){return ['content.list','content.get','content.create','content.update','content.trash','content.restore','content.delete','content.status','media.list','media.get','media.upload_base64','media.update','media.delete','terms.list','terms.create','terms.update','terms.delete','comments.list','comments.update','comments.delete','menus.list','menus.get','menus.create','menus.update','menus.delete','settings.get','settings.update','users.list','users.get','users.create','users.update','users.delete','users.password_reset_email','themes.list','themes.install_base64','themes.activate','themes.delete','plugins.list','plugins.install_base64','plugins.activate','plugins.deactivate','plugins.delete','maintenance.flush_rewrite','maintenance.clear_object_cache'];}
  private function tool_schema(){return ['type'=>'object','properties'=>[
-  'confirm'=>['type'=>'boolean','description'=>'Required and true for publishing, deletion, installation, activation, user changes, settings changes, and maintenance.'],
+  'confirm'=>['type'=>'boolean','description'=>'Required and true for publishing, deletion, installation, activation, user changes, password reset emails, settings changes, and maintenance.'],
   'id'=>['type'=>'integer'],'post_type'=>['type'=>'string','description'=>'Usually post or page.'],'status'=>['type'=>'string'],'title'=>['type'=>'string'],'content'=>['type'=>'string'],'excerpt'=>['type'=>'string'],'slug'=>['type'=>'string'],'search'=>['type'=>'string'],'per_page'=>['type'=>'integer','minimum'=>1,'maximum'=>100],'page'=>['type'=>'integer','minimum'=>1],'parent'=>['type'=>'integer'],'menu_order'=>['type'=>'integer'],'featured_media'=>['type'=>'integer'],'terms'=>['type'=>'object'],'meta'=>['type'=>'object'],'taxonomy'=>['type'=>'string'],'name'=>['type'=>'string'],'description'=>['type'=>'string'],'menu_id'=>['type'=>'integer'],'location'=>['type'=>'string'],'item'=>['type'=>'object'],'settings'=>['type'=>'object'],'login'=>['type'=>'string'],'email'=>['type'=>'string'],'password'=>['type'=>'string'],'role'=>['type'=>'string'],'reassign'=>['type'=>'integer'],'filename'=>['type'=>'string'],'base64'=>['type'=>'string'],'base64_zip'=>['type'=>'string'],'alt'=>['type'=>'string'],'caption'=>['type'=>'string'],'stylesheet'=>['type'=>'string'],'plugin'=>['type'=>'string'],'force'=>['type'=>'boolean']
  ],'additionalProperties'=>true];}
  private function tools(){
   $empty_schema=['type'=>'object','properties'=>(object)[],'additionalProperties'=>false];
   $tools=[['name'=>'get_site_info','description'=>'Read WordPress site identity, versions, active theme, URLs, and connection status.','inputSchema'=>$empty_schema,'annotations'=>['readOnlyHint'=>true,'destructiveHint'=>false]],['name'=>'list_wordpress_capabilities','description'=>'List all WordPress management actions supported by this server.','inputSchema'=>$empty_schema,'annotations'=>['readOnlyHint'=>true,'destructiveHint'=>false]]];
-  foreach($this->action_names() as $a){$read=str_ends_with($a,'.list')||str_ends_with($a,'.get');$danger=str_contains($a,'delete')||str_contains($a,'install')||str_contains($a,'activate')||str_contains($a,'deactivate')||str_contains($a,'trash')||str_contains($a,'restore')||str_contains($a,'settings.update')||str_contains($a,'maintenance');$tools[]=['name'=>str_replace('.','_',$a),'description'=>ucfirst(str_replace(['.','_'],[' ',' '],$a)).'. Use exact IDs from a prior read. Consequential changes require confirm=true.','inputSchema'=>$this->tool_schema(),'annotations'=>['readOnlyHint'=>$read,'destructiveHint'=>$danger,'idempotentHint'=>$read]];}
+  foreach($this->action_names() as $a){$read=str_ends_with($a,'.list')||str_ends_with($a,'.get');$danger=str_contains($a,'delete')||str_contains($a,'install')||str_contains($a,'activate')||str_contains($a,'deactivate')||str_contains($a,'trash')||str_contains($a,'restore')||str_contains($a,'settings.update')||str_contains($a,'maintenance')||str_contains($a,'password_reset_email');$description=$a==='users.password_reset_email'?'Send a one-time password reset email to a WordPress user’s registered email address. Requires the user’s edit permission and confirm=true. Never accepts or sends a password; inbox delivery is not verified.':' '.ucfirst(str_replace(['.','_'],[' ',' '],$a)).'. Use exact IDs from a prior read. Consequential changes require confirm=true.';$schema=$this->tool_schema();if($a==='users.password_reset_email')$schema=['type'=>'object','properties'=>['login'=>['type'=>'string','description'=>'Exact username from users_list.'],'confirm'=>['type'=>'boolean','description'=>'Required and true to send the password reset email.']],'required'=>['login','confirm'],'additionalProperties'=>false];$tools[]=['name'=>str_replace('.','_',$a),'description'=>trim($description),'inputSchema'=>$schema,'annotations'=>['readOnlyHint'=>$read,'destructiveHint'=>$danger,'idempotentHint'=>$read]];}
   return $tools;
  }
  private function rpc_error($id,$code,$message,$data=null){$e=['jsonrpc'=>'2.0','id'=>$id,'error'=>['code'=>$code,'message'=>$message]];if($data!==null)$e['error']['data']=$data;return new WP_REST_Response($e,200,['Content-Type'=>'application/json']);}

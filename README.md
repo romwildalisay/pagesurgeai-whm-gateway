@@ -1,4 +1,4 @@
-# PageSurgeAI WHM Gateway v0.9.3
+# PageSurgeAI WHM Gateway v0.9.4
 
 A Node.js MCP gateway for a cPanel/WHM reseller. It supports scoped hosting inventory and account creation, WordPress installation and prompt management across verified reseller-owned accounts, bandwidth and SSL operations, plus separately authorized destructive actions.
 
@@ -59,7 +59,7 @@ Add and grant `whm:wordpress` in the existing Auth0 API, then reauthorize the ex
 
 WordPress tools accept an exact primary `domain` (recommended) or a `username`. Domain requests are resolved through WHM's reseller account inventory and ownership is rechecked before cPanel access. If both are supplied, they must refer to the same primary account. Arbitrary URLs, addon domains and unverified accounts are rejected. This makes one OAuth/MCP connection usable across eligible reseller accounts without storing a username in Render for each site.
 
-`hosting_get_wordpress_status` reads Softaculous inventory without making changes. `hosting_install_wordpress` requires the exact primary domain, site title, admin email and `confirm: true`; cPanel username is optional and resolved from WHM. Existing files remain protected. HTTPS is checked before installation except for the one explicitly authorized isolated HTTP test domain. New installations request credentials by email to the verified WHM contact address; use WordPress Manager's Login button if needed.
+`hosting_get_wordpress_status` reads Softaculous inventory without making changes. `hosting_install_wordpress` requires the exact primary domain, site title, admin email and `confirm: true`; cPanel username is optional and resolved from WHM. Existing files remain protected. HTTPS is checked before installation except for the one explicitly authorized isolated HTTP test domain. New installations request a Softaculous email to the verified WHM contact with password inclusion enabled. Inbox delivery is not verified.
 
 No automatic retries or durable background jobs are provided. A slow operation may finish after a client timeout; inspect WordPress Manager before retrying. WordPress MCP setup is attempted after a confirmed new installation.
 
@@ -73,12 +73,12 @@ HTTP is explicitly permitted only for the isolated `mature-yellow-fish.104-219-2
 
 New installations verify the account's WHM contact email, configure Softaculous `act=email` with `editemailsettings=1` and `ins_email=1`, then omit `noemail` on installation. No arbitrary recipient is accepted. A configuration failure stops installation. The `hosting_configure_wordpress_email` tool requires `whm:read whm:wordpress` and explicit confirmation; it configures future installation mail and never retrieves an old password, resets one, or resends credentials for an existing site.
 
-For each new installation the gateway requests Softaculous email delivery to the verified WHM contact. After the site-local MCP Manager is connected, it makes one additional authenticated request to WordPress to queue the same login details to that verified address. The password exists only in the gateway's private install handoff and the HTTPS request body; it is never returned in a tool result or written to the WordPress database. WordPress stores only a sent marker. `queued` means `wp_mail()` accepted the send request; `unknown` means the connection ended before the gateway could confirm the outcome; neither status proves inbox receipt. The hosting server's mail transport, SPF/DKIM and recipient filtering still affect delivery. Existing sites are not reinstalled or reset for mail testing, and the fallback cannot resend old credentials. Plaintext password delivery exposes the password to anyone with access to the message, so users should change it after first login.
+For new installations the gateway requests Softaculous email delivery to the verified WHM contact with password inclusion enabled. Softaculous versions and mail settings may affect delivery; inbox receipt is not verified. For existing WordPress accounts, the MCP Manager's `users_password_reset_email` action uses WordPress's native password recovery email. It requires `confirm=true` and permission to edit the target user; it sends a reset link, never accepts or emails a password, and reports queue status rather than inbox delivery. Existing sites are never reinstalled or reset as an email test.
 
 
 ## WordPress MCP bridge
 
-WordPress MCP Manager 2.0.6 remains a site-local adapter installed separately on each WordPress site. Each installation has its own endpoint and independent Bearer hash. The WHM Gateway is the shared MCP endpoint: it resolves the requested primary domain to its reseller-owned cPanel account, verifies the Softaculous installation, derives that site's token from the existing WHM secret, and routes the request over valid HTTPS. The same connection can therefore manage multiple eligible sites; users do not need a separate ChatGPT connection or Render credential per site.
+WordPress MCP Manager 2.0.7 remains a site-local adapter installed separately on each WordPress site. Each installation has its own endpoint and independent Bearer hash. The WHM Gateway is the shared MCP endpoint: it resolves the requested primary domain to its reseller-owned cPanel account, verifies the Softaculous installation, derives that site's token from the existing WHM secret, and routes the request over valid HTTPS. The same connection can therefore manage multiple eligible sites; users do not need a separate ChatGPT connection or Render credential per site.
 
 `hosting_setup_wordpress_mcp`, `hosting_wordpress_read` and `hosting_wordpress_write` accept `domain` or `username`. Use the domain in prompts. Existing plugin installations and tokens are preserved. New installs configure the private per-site token during activation. The token is never returned in results. Rotating the WHM secret or manually regenerating a site's token invalidates the bridge. Verify `get_site_info` before making changes, keep new content as drafts unless publication is requested, and inspect state before retrying an uncertain write.
 
@@ -145,6 +145,6 @@ The resolver supports the primary domain at each reseller-owned cPanel account. 
 
 Softaculous plugin inventory can be returned under either `plugins` or `plugins_list`. The gateway now recognizes both structured response forms, checks the inventory for an existing MCP Manager before uploading, and remains fail-closed for missing or unsupported fields. Diagnostics expose only safe field names and value types, never response values or credentials. Retry MCP setup on the existing WordPress installation; do not reinstall WordPress.
 
-## WordPress installation email fallback (0.9.3)
+## WordPress MCP Manager 2.0.7 (0.9.4)
 
 After a new WordPress install and successful MCP connection, the gateway sends the temporary login details through an authenticated, one-time WordPress endpoint to the WHM-verified account contact. Passwords remain transient in the gateway and request body and are not stored in WordPress options. The gateway distinguishes queue acceptance, non-queueing, and unknown outcomes; inbox delivery still requires confirmation from the recipient or mail logs.
