@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "pagesurgeai-whm-gateway",
-  "version": "0.9.4",
+  "version": "0.10.0",
   "description": "Manage reseller-owned hosting and multiple WordPress sites through one verified gateway.",
   "author": {
     "name": "PageSurgeAI"
