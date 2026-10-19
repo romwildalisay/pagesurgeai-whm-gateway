@@ -1,11 +1,28 @@
 ---
 name: inspect-whm
-description: Inspect PageSurgeAI WHM accounts, packages and usage; create accounts; adjust monthly bandwidth; install SSL from certificate ZIPs; install and manage WordPress; preview and execute explicitly approved WordPress removal/reinstallation or account termination across accounts accessible to the configured WHM identity.
+description: Inspect PageSurgeAI WHM accounts, packages and usage; create accounts; adjust disk storage quotas and monthly bandwidth; install SSL from certificate ZIPs; install and manage WordPress; preview and execute explicitly approved WordPress removal/reinstallation or account termination across accounts accessible to the configured WHM identity.
 ---
 
 # Manage hosting and WordPress
 
 Use the existing PageSurgeAI WHM Web connection. Preserve its App binding, OAuth settings and sharing. Account-wide capability access is not permission to change or delete any account.
+
+## Account disk storage quotas
+
+For disk storage requests, obtain the exact username and primary domain from account inventory. Call `hosting_get_disk_quota` before changing storage. It verifies ownership and returns the quota and disk usage in MB; null usage means unknown. Use 1 GB = 1024 MB and state the conversion: 5 GB = 5120 MB.
+
+For an explicit account-specific request, call `hosting_set_disk_quota` with that username/domain, positive integer `limit_mb` or literal `unlimited`, and `confirm: true`. Zero is rejected to prevent accidental unlimited storage. Honor authorization already supplied; a clear request to set a named account to 5 GB authorizes 5120 MB. Requires `whm:read whm:disk` and WHM Quota Modification (`quota`) and Account Summary permissions.
+
+Before a below-usage reduction, explain that exceeding the new quota may prevent file writes, uploads, database operations and email delivery. Set `allow_below_usage: true` only after explicit acceptance of this impact. The same acceptance is required when reducing a quota with unknown usage. Never infer acceptance from silence or the original reduction request alone. The backend rechecks ownership, domain and usage immediately before writing.
+
+Report `updated`, `already_set` and `change_not_verified` accurately. After an uncertain result inspect `hosting_get_disk_quota`; do not automatically repeat the write. Only the selected account's disk quota is adjusted. Shared packages, bandwidth and suspension are unchanged; later package changes may overwrite the custom quota.
+
+Activation requires deploying the updated gateway, adding/granting `whm:disk` in the existing Auth0 API, reauthorizing the existing connection with that scope while preserving all existing scopes, and refreshing its tools. Do not rotate secrets, recreate the App or grant upstream privileges automatically. Distinguish OAuth scope failures from WHM permission/resource-limit failures. If these tools are absent, say activation is pending rather than claiming success.
+
+Example prompts:
+- "Show thisisatestwebsite.com's disk limit and usage without changes."
+- "Decrease thisisatestwebsite.com's disk storage to 5 GB (5120 MB), then verify it."
+- "Set example.com's disk storage to unlimited."
 
 ## Inventory and account creation
 

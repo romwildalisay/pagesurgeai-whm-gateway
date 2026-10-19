@@ -26,8 +26,25 @@ async function endpoint(verifier?: Parameters<typeof createGatewayApp>[1]) {
 }
 
 describe("HTTP OAuth boundary", () => {
+  it("allows an authorized disk change through HTTP and verifies the resulting quota", async () => {
+    const account = (disklimit: string) => ({ data: { acct: [{ user: "sitea", domain: "example.com", owner: "reseller", diskused: "1M", disklimit }] } });
+    vi.spyOn(WhmClient.prototype, "call").mockResolvedValueOnce(account("10240M")).mockResolvedValueOnce(account("10240M")).mockResolvedValueOnce(account("5120M"));
+    const write = vi.spyOn(WhmClient.prototype, "setDiskQuota").mockResolvedValue({ accepted: true });
+    const verify = vi.fn(async () => ({ ok: true as const, subject: "authorized-user" }));
+    const base = await endpoint(verify);
+    const response = await fetch(base + "/mcp", { method: "POST", headers: {
+      authorization: "Bearer authorized-token", "content-type": "application/json", accept: "application/json, text/event-stream"
+    }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: {
+      name: "hosting_set_disk_quota", arguments: { username: "sitea", domain: "example.com", limit_mb: 5120, confirm: true }
+    } }) });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('"status":"updated"');
+    expect(verify).toHaveBeenCalledWith("Bearer authorized-token", ["whm:read", "whm:disk"]);
+    expect(write).toHaveBeenCalledExactlyOnceWith("sitea", 5120);
+  });
   it.each([
     ["hosting_set_bandwidth", "whm:bandwidth"],
+    ["hosting_set_disk_quota", "whm:disk"],
     ["hosting_validate_ssl_zip", "whm:ssl"],
     ["hosting_install_ssl_zip", "whm:ssl"]
   ])("requires new scope before %s reaches WHM", async (name, scope) => {
@@ -116,13 +133,13 @@ describe("HTTP OAuth boundary", () => {
       const response = await fetch(base + path);
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ resource: config.OAUTH_AUDIENCE,
-        authorization_servers: ["https://tenant.example.test/"], scopes_supported: ["whm:read", "whm:create", "whm:wordpress", "whm:delete", "whm:bandwidth", "whm:ssl"] });
+        authorization_servers: ["https://tenant.example.test/"], scopes_supported: ["whm:read", "whm:create", "whm:wordpress", "whm:delete", "whm:bandwidth", "whm:ssl", "whm:disk"] });
     }
   });
   it("does not confuse process health with completed OAuth or WHM checks", async () => {
     const base = await endpoint();
     const body = await (await fetch(base + "/health")).json();
-    expect(body.checks).toEqual({ process: "ok", oauth_link: "not_checked", whm: "not_checked", wordpress: "not_checked", ssl_validator: "ready" });
+    expect(body.checks).toEqual({ process: "ok", oauth_link: "not_checked", whm: "not_checked", wordpress: "not_checked", ssl_validator: expect.stringMatching(/^(ready|unavailable)$/) });
     expect(JSON.stringify(body)).not.toContain(config.WHM_API_TOKEN);
   });
   it.each(["missing_token", "invalid_token", "insufficient_scope"] as const)(

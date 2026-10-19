@@ -31,6 +31,7 @@ async function connectedClient() {
 describe("PageSurgeAI WHM Gateway v0.4.0", () => {
   it.each([
     ["hosting_set_bandwidth", "whm:bandwidth"],
+    ["hosting_set_disk_quota", "whm:disk"],
     ["hosting_validate_ssl_zip", "whm:ssl"],
     ["hosting_install_ssl_zip", "whm:ssl"]
   ])("denies %s at the MCP boundary without %s", async (name, scope) => {
@@ -85,6 +86,7 @@ describe("PageSurgeAI WHM Gateway v0.4.0", () => {
       "hosting_delete_wordpress",
       "hosting_get_account",
       "hosting_get_bandwidth",
+      "hosting_get_disk_quota",
       "hosting_get_ssl_status",
       "hosting_get_usage",
       "hosting_get_wordpress_status",
@@ -95,12 +97,13 @@ describe("PageSurgeAI WHM Gateway v0.4.0", () => {
       "hosting_prepare_destructive_action",
       "hosting_reinstall_wordpress",
       "hosting_set_bandwidth",
+      "hosting_set_disk_quota",
       "hosting_setup_wordpress_mcp",
       "hosting_validate_ssl_zip",
       "hosting_wordpress_read",
       "hosting_wordpress_write"
     ]);
-    for (const tool of response.tools.filter((t) => !["hosting_create_account", "hosting_install_wordpress", "hosting_configure_wordpress_email", "hosting_setup_wordpress_mcp", "hosting_wordpress_write", "hosting_delete_account", "hosting_delete_wordpress", "hosting_reinstall_wordpress", "hosting_set_bandwidth", "hosting_install_ssl_zip", "hosting_validate_ssl_zip"].includes(t.name))) {
+    for (const tool of response.tools.filter((t) => !["hosting_create_account", "hosting_install_wordpress", "hosting_configure_wordpress_email", "hosting_setup_wordpress_mcp", "hosting_wordpress_write", "hosting_delete_account", "hosting_delete_wordpress", "hosting_reinstall_wordpress", "hosting_set_bandwidth", "hosting_set_disk_quota", "hosting_install_ssl_zip", "hosting_validate_ssl_zip"].includes(t.name))) {
       expect(tool.annotations?.readOnlyHint).toBe(true);
       expect(tool.annotations?.destructiveHint).toBe(false);
       expect(tool._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["whm:read"] }]);

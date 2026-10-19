@@ -1,4 +1,5 @@
 import { installWordpressWithMcp } from "./wordpress-install.js";
+import { DISK_SCOPE, diskQuotaInput, getDiskQuota, setAccountDiskQuota } from "./disk-quota.js";
 import { createHostingAccount, creationInput, CREATE_SCOPE } from "./account-creation.js";
 import { configureWordpressEmail, wordpressStatus, wordpressInput, wordpressInstallInput, wordpressSiteSelectorFields, WORDPRESS_SCOPE } from "./wordpress-setup.js";
 import { setupWordpressMcp, wordpressRead, wordpressWrite, wordpressReads, wordpressWrites, wordpressAccountInput, wordpressParameters } from "./wordpress-mcp.js";
@@ -32,11 +33,11 @@ function accountView(a: any) {
   };
 }
 
-export function createMcpServer(config: Config, access: { canCreate: boolean; canInstall?: boolean; canDelete?: boolean; canBandwidth?: boolean; canSsl?: boolean } = { canCreate: false }): McpServer {
+export function createMcpServer(config: Config, access: { canCreate: boolean; canInstall?: boolean; canDelete?: boolean; canBandwidth?: boolean; canDisk?: boolean; canSsl?: boolean } = { canCreate: false }): McpServer {
   const whm = new WhmClient(config);
   const securitySchemes = [{ type: "oauth2" as const, scopes: [config.OAUTH_SCOPE] }];
   const server = new McpServer(
-    { name: "pagesurgeai-whm-gateway", version: "0.9.4" },
+    { name: "pagesurgeai-whm-gateway", version: "0.10.0" },
     { instructions: "Inspect hosting, create accounts with creation permission, and manage WordPress on verified reseller-owned accounts. Select WordPress sites by exact primary domain; the gateway resolves the account through WHM and uses an independent private Bearer token per installation. Install the user's WordPress MCP Manager through hosting_setup_wordpress_mcp. Valid WordPress HTTPS is required. Read site identity and current content before writes. Set confirm=true only for user-authorized actions. Do not retry uncertain writes. Destructive hosting operations require a fresh preview, exact target approval and whm:delete. No shell access is implemented." }
   );
 
@@ -200,6 +201,21 @@ export function createMcpServer(config: Config, access: { canCreate: boolean; ca
     if (!access.canInstall || !access.canDelete) throw new Error("WordPress destruction requires whm:wordpress and whm:delete.");
     const state = await reinstallWordpress(config, input);
     return result(state, `WordPress reinstall: ${state.status}. Never retry deletion automatically.`);
+  });
+  server.registerTool("hosting_get_disk_quota", {
+    title: "Inspect account disk storage limit and usage",
+    description: "Verify the exact account owner and primary domain, then read disk storage quota and usage in MB. Makes no changes. Use before and after disk quota adjustments; unknown usage is returned as null.",
+    inputSchema: accountTargetInput, annotations, _meta: { securitySchemes }
+  }, async input => result(await getDiskQuota(config, input), "Read disk storage quota and usage; no changes made."));
+  server.registerTool("hosting_set_disk_quota", {
+    title: "Adjust one account's disk storage limit",
+    description: "Set one verified account's disk quota to positive integer limit_mb or explicit unlimited; 5 GB = 5120 MB. Requires whm:read whm:disk and WHM Quota Modification (quota). Read hosting_get_disk_quota first. Set confirm=true only for an explicit account-specific request. Reducing below usage or reducing with unknown usage requires explicit acceptance of file-write/email interruption before allow_below_usage=true. Changes only the selected account quota. Independently verifies read-back; never automatically retry uncertain writes.",
+    inputSchema: diskQuotaInput, annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    _meta: { securitySchemes: [{ type: "oauth2", scopes: [config.OAUTH_SCOPE, DISK_SCOPE] }] }
+  }, async input => {
+    if (!access.canDisk) throw new Error("Disk quota changes require whm:disk. Grant the API permission and reauthorize the existing Web connection.");
+    const state = await setAccountDiskQuota(config, input);
+    return result(state, `Disk quota adjustment: ${state.status}.`);
   });
   server.registerTool("hosting_get_bandwidth", {
     title: "Inspect monthly bandwidth limit and usage",

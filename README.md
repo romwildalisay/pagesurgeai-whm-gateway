@@ -1,4 +1,4 @@
-# PageSurgeAI WHM Gateway v0.9.4
+# PageSurgeAI WHM Gateway v0.10.0
 
 A Node.js MCP gateway for a cPanel/WHM reseller. It supports scoped hosting inventory and account creation, WordPress installation and prompt management across verified reseller-owned accounts, bandwidth and SSL operations, plus separately authorized destructive actions.
 
@@ -10,11 +10,21 @@ A Node.js MCP gateway for a cPanel/WHM reseller. It supports scoped hosting inve
 | `hosting_get_account` | `whm:read` | `accountsummary` |
 | `hosting_list_packages` | `whm:read` | `listpkgs` |
 | `hosting_get_usage` | `whm:read` | `accountsummary` |
+| `hosting_get_disk_quota` | `whm:read` | Verified `accountsummary` quota and usage |
+| `hosting_set_disk_quota` | `whm:read whm:disk` | `editquota`, then independent `accountsummary` read-back |
 | `hosting_create_account` | `whm:read whm:create` | `createacct` |
 
 Creation requires domain, lowercase cPanel username, an exact existing package, contact email, and `confirm: true`. The gateway validates inventory and packages before writing. An existing matching username/domain/package returns `already_exists` without changes; conflicting accounts are rejected. WHM applies server limits and username rules, including any database prefix restrictions.
 
 Creation uses a POST form body. A random password is generated privately; neither it nor raw account-creation output is returned to the client. Shell and reseller access are disabled, existing DNS zones are not overwritten, and package quotas are inherited. Access the resulting cPanel account through WHM or reset its password there. The gateway exposes only the documented, scoped operations; it does not provide an arbitrary WHM proxy.
+
+## Disk storage adjustments from prompts
+
+Use "Decrease thisisatestwebsite.com's disk storage to 5 GB, then verify it." The agent reads the account identity and `hosting_get_disk_quota`, converts 5 GB to 5120 MB, and calls `hosting_set_disk_quota` with the exact username/domain, `limit_mb: 5120` and `confirm: true`.
+
+Disk writes require the new `whm:disk` scope as well as `whm:read`. WHM must permit Quota Modification (`quota`) and Account Summary. See [activation steps](UPDATE-0.10.0.md) for the existing Render/Auth0/App connection. Do not change `OAUTH_SCOPE` from its base read permission.
+
+The backend verifies account ownership and primary domain, rechecks usage immediately before writing, and reads back the resulting quota. Positive integer MB limits and explicit `unlimited` are supported; zero is rejected. A quota below usage may prevent file writes and email delivery. Such reductions, including reductions with unknown usage, require explicit acceptance before `allow_below_usage: true` is used. Uninterpretable limits block writes. Results distinguish `updated`, `already_set` and `change_not_verified`; inspect the read tool before further action after uncertain writes. Shared packages, bandwidth and suspension are unchanged; future package changes may overwrite custom limits.
 
 ## Enable creation on the working connection
 
@@ -145,6 +155,6 @@ The resolver supports the primary domain at each reseller-owned cPanel account. 
 
 Softaculous plugin inventory can be returned under either `plugins` or `plugins_list`. The gateway now recognizes both structured response forms, checks the inventory for an existing MCP Manager before uploading, and remains fail-closed for missing or unsupported fields. Diagnostics expose only safe field names and value types, never response values or credentials. Retry MCP setup on the existing WordPress installation; do not reinstall WordPress.
 
-## WordPress MCP Manager 2.0.7 (0.9.4)
+## WordPress MCP Manager 2.0.7 (0.10.0)
 
 After a new WordPress install and successful MCP connection, the gateway sends the temporary login details through an authenticated, one-time WordPress endpoint to the WHM-verified account contact. Passwords remain transient in the gateway and request body and are not stored in WordPress options. The gateway distinguishes queue acceptance, non-queueing, and unknown outcomes; inbox delivery still requires confirmation from the recipient or mail logs.
