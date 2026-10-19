@@ -42,6 +42,15 @@ export class WhmClient {
     } catch { throw new WhmError("Account deletion was not confirmed. Check WHM inventory before any further action; do not retry automatically. Verify Terminate Accounts (kill-acct) permission if WHM rejected the request."); }
   }
 
+  async setDiskQuota(username: string, limit: number | "unlimited") {
+    validateCpanelUser(username);
+    if (limit !== "unlimited" && (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000_000_000)) throw new WhmError("Invalid disk quota; use a positive integer MB value or explicit unlimited.");
+    try {
+      await this.request("editquota", { user: username, quota: limit }, true);
+      return { accepted: true };
+    } catch { throw new WhmError("Disk quota change was not confirmed. Inspect hosting_get_disk_quota before retrying; do not retry automatically. Verify WHM Quota Modification (quota) permission and reseller resource limits. Reconnecting Auth0 does not repair WHM permissions. No upstream response is returned."); }
+  }
+
   async setBandwidth(username: string, limit: number | "unlimited") {
     try {
       return await this.request("limitbw", { user: username, bwlimit: limit }, true);
@@ -72,7 +81,7 @@ export class WhmClient {
         headers: {
           Authorization: `whm ${this.config.WHM_USERNAME}:${this.config.WHM_API_TOKEN}`,
           Accept: "application/json",
-          "User-Agent": "PageSurgeAI-WHM-Gateway/0.9.4"
+          "User-Agent": "PageSurgeAI-WHM-Gateway/0.10.0"
         },
         signal: controller.signal
       });
